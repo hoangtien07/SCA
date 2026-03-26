@@ -1,0 +1,12 @@
+# railway.streamlit.toml — Streamlit service config
+# Use this for the "ui" service on Railway:
+#   Set RAILWAY_TOML_PATH=railway.streamlit.toml in the service env vars
+
+[build]
+dockerfilePath = "Dockerfile.streamlit"
+
+[deploy]
+healthcheckPath = "/_stcore/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

@@ -1,0 +1,40 @@
+SKIN PROFILE:
+{profile_json}
+
+RETRIEVED SCIENTIFIC EVIDENCE:
+{evidence_context}
+
+Based on the evidence above, generate a complete personalized skincare regimen.
+
+Rules:
+1. Only recommend ingredients that have evidence in the provided context
+2. Respect the contraindications from the profile (medications, allergies, pregnancy)
+3. Build from gentlest to most active — don't overwhelm a new routine
+4. Include specific product categories, not brand names
+5. Flag any ingredient pairs to avoid using together
+6. Evidence grade must match the study types in the context
+7. Maximum 7 steps per routine (AM or PM) — patient compliance drops beyond this
+8. Do not exceed OTC concentration limits (retinol ≤1%, hydroquinone ≤2%, glycolic acid ≤10%, salicylic acid ≤2%, BPO ≤10%)
+9. For severe conditions, recommend dermatologist consultation as the first step
+
+Return valid JSON matching this schema:
+{{
+  "profile_summary": "2-3 sentence summary of the skin profile and main goals",
+  "am_routine": [
+    {{
+      "step_number": 1,
+      "product_type": "...",
+      "active_ingredients": ["..."],
+      "concentration_range": "...",
+      "application_notes": "...",
+      "evidence_grade": "A|B|C",
+      "citations": ["paper title 1", "paper title 2"]
+    }}
+  ],
+  "pm_routine": [...],
+  "weekly_treatments": [...],
+  "ingredients_to_avoid": ["..."],
+  "contraindications": ["..."],
+  "lifestyle_notes": ["..."],
+  "follow_up_weeks": 8
+}}

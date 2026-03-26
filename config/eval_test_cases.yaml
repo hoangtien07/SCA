@@ -1,0 +1,537 @@
+# config/eval_test_cases.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# 30 evaluation test cases for RAGAS metrics + manual review.
+# Cases 1-10 from docs/EVALUATION.md; cases 11-30 are new edge cases.
+#
+# Schema per case:
+#   id:                  unique identifier
+#   name:                short descriptor
+#   difficulty:          easy | medium | hard
+#   profile:             SkinProfile-like dict for retrieval + generation
+#   query:               natural language retrieval query
+#   expected_keywords:   words that should appear in retrieved evidence
+#   expected_ingredients: ingredients the regimen should recommend
+#   must_not_include:    ingredients that must NOT appear
+#   must_flag_warning:   whether safety should trigger warning(s)
+#   notes:               explanation of what makes this case interesting
+# ─────────────────────────────────────────────────────────────────────────────
+
+test_cases:
+  # ── Cases 1-10: Core profiles (from EVALUATION.md) ──────────────────────
+
+  - id: 1
+    name: "Oily acne-prone skin"
+    difficulty: easy
+    profile:
+      skin_type: oily
+      concerns: [acne, oiliness, large_pores]
+      age: 22
+      pregnancy: false
+      medications: []
+      allergies: []
+    query: "acne oily skin treatment clinical evidence"
+    expected_keywords: [niacinamide, salicylic, benzoyl, sebum]
+    expected_ingredients: [niacinamide, salicylic_acid, benzoyl_peroxide]
+    must_not_include: [heavy_oils, coconut_oil]
+    must_flag_warning: false
+
+  - id: 2
+    name: "Mature dry skin"
+    difficulty: easy
+    profile:
+      skin_type: dry
+      concerns: [fine_lines, dryness, dullness]
+      age: 50
+      pregnancy: false
+      medications: []
+      allergies: []
+    query: "anti-aging dry skin retinol hyaluronic acid"
+    expected_keywords: [retinol, hyaluronic, ceramide, peptide]
+    expected_ingredients: [retinol, hyaluronic_acid, ceramides, peptides]
+    must_not_include: []
+    must_flag_warning: false
+
+  - id: 3
+    name: "Pregnancy-safe routine"
+    difficulty: medium
+    profile:
+      skin_type: combination
+      concerns: [melasma, acne]
+      age: 30
+      pregnancy: true
+      medications: []
+      allergies: []
+    query: "pregnancy safe skincare melasma acne"
+    expected_keywords: [azelaic, niacinamide, vitamin_c, pregnancy]
+    expected_ingredients: [azelaic_acid, vitamin_c, niacinamide]
+    must_not_include: [retinoids, hydroquinone, salicylic_acid]
+    must_flag_warning: true
+    notes: "Must flag pregnancy contraindications for retinoids"
+
+  - id: 4
+    name: "Isotretinoin interaction"
+    difficulty: medium
+    profile:
+      skin_type: oily
+      concerns: [acne]
+      age: 25
+      pregnancy: false
+      medications: [isotretinoin]
+      allergies: []
+    query: "isotretinoin skincare routine evidence"
+    expected_keywords: [isotretinoin, retinoid, moisturizer, gentle]
+    expected_ingredients: [gentle_cleanser, moisturizer, SPF]
+    must_not_include: [topical_retinoids, AHA, BHA]
+    must_flag_warning: true
+    notes: "Must warn about isotretinoin+topical retinoid interaction"
+
+  - id: 5
+    name: "Rosacea sensitive skin"
+    difficulty: medium
+    profile:
+      skin_type: sensitive
+      concerns: [rosacea, redness]
+      age: 40
+      fitzpatrick: II
+      pregnancy: false
+      medications: []
+      allergies: []
+    query: "rosacea sensitive skin treatment evidence"
+    expected_keywords: [azelaic, niacinamide, ceramide, rosacea]
+    expected_ingredients: [azelaic_acid, niacinamide, ceramides]
+    must_not_include: [AHA, BHA, high_vitamin_c, fragrance]
+    must_flag_warning: false
+
+  - id: 6
+    name: "Dark skin hyperpigmentation"
+    difficulty: medium
+    profile:
+      skin_type: normal
+      concerns: [hyperpigmentation, PIH]
+      age: 28
+      fitzpatrick: V
+      pregnancy: false
+      medications: []
+      allergies: []
+    query: "hyperpigmentation dark skin Fitzpatrick V treatment"
+    expected_keywords: [vitamin_c, niacinamide, tranexamic, melanin]
+    expected_ingredients: [vitamin_c, niacinamide, tranexamic_acid]
+    must_not_include: []
+    must_flag_warning: false
+    notes: "Should avoid aggressive exfoliation for Fitzpatrick V"
+
+  - id: 7
+    name: "Teen acne"
+    difficulty: easy
+    profile:
+      skin_type: oily
+      concerns: [acne, oiliness]
+      age: 15
+      pregnancy: false
+      medications: []
+      allergies: []
+    query: "teenage acne treatment simple routine"
+    expected_keywords: [benzoyl, gentle, salicylic, acne]
+    expected_ingredients: [gentle_cleanser, benzoyl_peroxide, SPF]
+    must_not_include: [high_retinol]
+    must_flag_warning: false
+    notes: "Age <16 should get simple routine, low-concentration actives"
+
+  - id: 8
+    name: "Eczema flare"
+    difficulty: medium
+    profile:
+      skin_type: dry
+      concerns: [eczema, barrier_damage, sensitivity]
+      age: 35
+      pregnancy: false
+      medications: [topical_corticosteroid]
+      allergies: []
+    query: "eczema skin barrier repair evidence"
+    expected_keywords: [ceramide, barrier, oatmeal, eczema]
+    expected_ingredients: [ceramides, colloidal_oatmeal, petrolatum]
+    must_not_include: [fragrance, AHA, retinol]
+    must_flag_warning: true
+    notes: "Should recommend dermatologist for active flare"
+
+  - id: 9
+    name: "Anti-aging 50+"
+    difficulty: easy
+    profile:
+      skin_type: dry
+      concerns: [wrinkles, sagging, age_spots]
+      age: 58
+      pregnancy: false
+      medications: []
+      allergies: []
+    query: "anti-aging wrinkles peptides retinol evidence"
+    expected_keywords: [retinol, peptide, vitamin_c, collagen]
+    expected_ingredients: [retinol, peptides, vitamin_c, SPF]
+    must_not_include: []
+    must_flag_warning: false
+
+  - id: 10
+    name: "Combination multi-concern"
+    difficulty: medium
+    profile:
+      skin_type: combination
+      concerns: [acne, hyperpigmentation, dehydration]
+      age: 28
+      pregnancy: false
+      medications: []
+      allergies: []
+      previous_treatments: ["benzoyl_peroxide — too drying"]
+    query: "combination skin acne hyperpigmentation treatment"
+    expected_keywords: [niacinamide, salicylic, vitamin_c, hydration]
+    expected_ingredients: [niacinamide, salicylic_acid, hyaluronic_acid]
+    must_not_include: [benzoyl_peroxide]
+    must_flag_warning: false
+
+  # ── Cases 11-20: Edge cases — medications & interactions ────────────────
+
+  - id: 11
+    name: "Tetracycline + retinoid interaction"
+    difficulty: hard
+    profile:
+      skin_type: oily
+      concerns: [acne]
+      age: 22
+      pregnancy: false
+      medications: [doxycycline]
+      allergies: []
+    query: "doxycycline acne skincare interaction"
+    expected_keywords: [tetracycline, photosensitivity, acne]
+    expected_ingredients: [gentle_cleanser, SPF, moisturizer]
+    must_not_include: [AHA, retinol]
+    must_flag_warning: true
+    notes: "Tetracycline + retinoids/AHA → photosensitivity risk"
+
+  - id: 12
+    name: "Blood thinner + vitamin E"
+    difficulty: hard
+    profile:
+      skin_type: dry
+      concerns: [dryness, fine_lines]
+      age: 65
+      pregnancy: false
+      medications: [warfarin]
+      allergies: []
+    query: "elderly dry skin anticoagulant skincare"
+    expected_keywords: [moisturizer, gentle, barrier]
+    expected_ingredients: [ceramides, hyaluronic_acid, SPF]
+    must_not_include: [vitamin_e_high_dose]
+    must_flag_warning: true
+    notes: "Blood thinners + vitamin E = bleeding risk"
+
+  - id: 13
+    name: "Immunosuppressant + exfoliants"
+    difficulty: hard
+    profile:
+      skin_type: sensitive
+      concerns: [dryness, redness]
+      age: 45
+      pregnancy: false
+      medications: [cyclosporine]
+      allergies: []
+    query: "immunosuppressant skin care barrier"
+    expected_keywords: [barrier, gentle, immunosuppressant]
+    expected_ingredients: [ceramides, gentle_cleanser, SPF]
+    must_not_include: [AHA, BHA, retinol]
+    must_flag_warning: true
+    notes: "Immunosuppressants + active exfoliants → barrier compromise"
+
+  - id: 14
+    name: "Pregnancy + isotretinoin history"
+    difficulty: hard
+    profile:
+      skin_type: oily
+      concerns: [acne, oiliness]
+      age: 28
+      pregnancy: true
+      medications: []
+      allergies: []
+      notes: "Previously on isotretinoin, stopped 6 months ago"
+    query: "pregnancy acne safe treatment after isotretinoin"
+    expected_keywords: [pregnancy, azelaic, safe, acne]
+    expected_ingredients: [azelaic_acid, niacinamide]
+    must_not_include: [retinoids, salicylic_acid, hydroquinone]
+    must_flag_warning: true
+    notes: "Double flag: pregnancy + isotretinoin history"
+
+  - id: 15
+    name: "Multiple allergies"
+    difficulty: hard
+    profile:
+      skin_type: sensitive
+      concerns: [redness, sensitivity]
+      age: 33
+      pregnancy: false
+      medications: []
+      allergies: [fragrance, lanolin, propylene_glycol]
+    query: "sensitive skin multiple allergies safe routine"
+    expected_keywords: [fragrance_free, hypoallergenic, barrier]
+    expected_ingredients: [ceramides, squalane, mineral_SPF]
+    must_not_include: [fragrance, lanolin]
+    must_flag_warning: true
+    notes: "Allergen check must cross-reference all 3 allergens"
+
+  # ── Cases 16-22: Multi-ethnic & special populations ─────────────────────
+
+  - id: 16
+    name: "Fitzpatrick VI keloid risk"
+    difficulty: hard
+    profile:
+      skin_type: oily
+      concerns: [acne_scars, hyperpigmentation, keloid_prone]
+      age: 25
+      fitzpatrick: VI
+      pregnancy: false
+      medications: []
+      allergies: []
+    query: "dark skin acne scars keloid hyperpigmentation"
+    expected_keywords: [PIH, keloid, melanin, gentle]
+    expected_ingredients: [niacinamide, azelaic_acid, SPF]
+    must_not_include: [aggressive_peels, high_concentration_AHA]
+    must_flag_warning: false
+    notes: "High PIH/keloid risk — must avoid aggressive treatments"
+
+  - id: 17
+    name: "South Asian melasma"
+    difficulty: medium
+    profile:
+      skin_type: combination
+      concerns: [melasma, sun_damage]
+      age: 35
+      fitzpatrick: IV
+      pregnancy: false
+      medications: []
+      allergies: []
+    query: "melasma Fitzpatrick IV treatment evidence"
+    expected_keywords: [tranexamic, vitamin_c, SPF, melasma]
+    expected_ingredients: [tranexamic_acid, vitamin_c, high_SPF]
+    must_not_include: [hydroquinone_long_term]
+    must_flag_warning: false
+
+  - id: 18
+    name: "Elderly thin skin (75+)"
+    difficulty: hard
+    profile:
+      skin_type: dry
+      concerns: [skin_thinning, bruising, dryness]
+      age: 78
+      pregnancy: false
+      medications: [aspirin, statin]
+      allergies: []
+    query: "elderly thin skin care gentle moisturizer"
+    expected_keywords: [barrier, gentle, ceramide, elderly]
+    expected_ingredients: [ceramides, petrolatum, gentle_cleanser]
+    must_not_include: [retinol, AHA, BHA]
+    must_flag_warning: true
+    notes: "Age >65 geriatric rules + aspirin drug interaction"
+
+  - id: 19
+    name: "Pediatric eczema (8 years)"
+    difficulty: hard
+    profile:
+      skin_type: dry
+      concerns: [eczema, itching]
+      age: 8
+      pregnancy: false
+      medications: []
+      allergies: []
+    query: "pediatric eczema child skin care"
+    expected_keywords: [eczema, pediatric, gentle, barrier]
+    expected_ingredients: [ceramides, colloidal_oatmeal, petrolatum]
+    must_not_include: [retinoids, AHA, BHA, benzoyl_peroxide]
+    must_flag_warning: true
+    notes: "Pediatric age — minimal actives, barrier-focused only"
+
+  - id: 20
+    name: "Post-chemical peel recovery"
+    difficulty: medium
+    profile:
+      skin_type: combination
+      concerns: [recovery, redness, sensitivity]
+      age: 35
+      pregnancy: false
+      medications: []
+      allergies: []
+      previous_treatments: ["professional glycolic peel 3 days ago"]
+    query: "post chemical peel skin recovery care"
+    expected_keywords: [recovery, barrier, gentle, SPF, peel]
+    expected_ingredients: [ceramides, gentle_cleanser, high_SPF]
+    must_not_include: [AHA, BHA, retinol, vitamin_c]
+    must_flag_warning: false
+
+  # ── Cases 21-25: Complex combinations ───────────────────────────────────
+
+  - id: 21
+    name: "Acne + rosacea overlap"
+    difficulty: hard
+    profile:
+      skin_type: combination
+      concerns: [acne, rosacea]
+      age: 32
+      pregnancy: false
+      medications: []
+      allergies: [benzoyl_peroxide]
+    query: "acne rosacea combination treatment evidence"
+    expected_keywords: [azelaic, niacinamide, gentle, rosacea, acne]
+    expected_ingredients: [azelaic_acid, niacinamide]
+    must_not_include: [benzoyl_peroxide, harsh_exfoliants]
+    must_flag_warning: true
+    notes: "Conflicting recommendations — rosacea avoids what acne needs"
+
+  - id: 22
+    name: "Post-laser pigmentation"
+    difficulty: medium
+    profile:
+      skin_type: normal
+      concerns: [PIH, recovery]
+      age: 30
+      fitzpatrick: III
+      pregnancy: false
+      medications: []
+      allergies: []
+      previous_treatments: ["laser treatment 2 weeks ago"]
+    query: "post laser skin pigmentation recovery"
+    expected_keywords: [PIH, recovery, SPF, gentle]
+    expected_ingredients: [high_SPF, ceramides, vitamin_c]
+    must_not_include: [AHA, retinol]
+    must_flag_warning: false
+
+  - id: 23
+    name: "Hormonal acne + PCOS"
+    difficulty: medium
+    profile:
+      skin_type: oily
+      concerns: [hormonal_acne, hirsutism]
+      age: 27
+      pregnancy: false
+      medications: [spironolactone, oral_contraceptive]
+      allergies: []
+    query: "hormonal acne PCOS spironolactone skincare"
+    expected_keywords: [acne, hormonal, niacinamide, gentle]
+    expected_ingredients: [niacinamide, azelaic_acid, salicylic_acid]
+    must_not_include: []
+    must_flag_warning: false
+
+  - id: 24
+    name: "Psoriasis + phototherapy"
+    difficulty: hard
+    profile:
+      skin_type: dry
+      concerns: [psoriasis, scaling, dryness]
+      age: 42
+      pregnancy: false
+      medications: [methotrexate]
+      allergies: []
+    query: "psoriasis topical care with methotrexate"
+    expected_keywords: [psoriasis, barrier, moisturizer, gentle]
+    expected_ingredients: [ceramides, urea, gentle_cleanser]
+    must_not_include: [retinoids, AHA]
+    must_flag_warning: true
+    notes: "Psoriasis → dermatologist referral; methotrexate → immunosuppressant"
+
+  - id: 25
+    name: "Contact dermatitis + nickel allergy"
+    difficulty: medium
+    profile:
+      skin_type: sensitive
+      concerns: [contact_dermatitis, redness, itching]
+      age: 38
+      pregnancy: false
+      medications: []
+      allergies: [nickel, fragrance, preservatives]
+    query: "contact dermatitis nickel allergy safe skincare"
+    expected_keywords: [hypoallergenic, fragrance_free, barrier]
+    expected_ingredients: [ceramides, petrolatum, mineral_SPF]
+    must_not_include: [fragrance, nickel_containing]
+    must_flag_warning: true
+
+  # ── Cases 26-30: Stress tests & boundary conditions ─────────────────────
+
+  - id: 26
+    name: "Minimal profile — skin type only"
+    difficulty: easy
+    profile:
+      skin_type: normal
+      concerns: []
+      age: 30
+      pregnancy: false
+      medications: []
+      allergies: []
+    query: "general skincare routine normal skin"
+    expected_keywords: [cleanser, moisturizer, SPF]
+    expected_ingredients: [gentle_cleanser, moisturizer, SPF]
+    must_not_include: []
+    must_flag_warning: false
+    notes: "Baseline — system must generate reasonable routine with minimal input"
+
+  - id: 27
+    name: "Maximum concerns profile"
+    difficulty: hard
+    profile:
+      skin_type: sensitive
+      concerns: [acne, rosacea, hyperpigmentation, fine_lines, dryness, eczema]
+      age: 40
+      pregnancy: false
+      medications: []
+      allergies: [fragrance]
+    query: "sensitive skin multiple concerns acne rosacea treatment"
+    expected_keywords: [gentle, niacinamide, ceramide, azelaic]
+    expected_ingredients: [niacinamide, azelaic_acid, ceramides]
+    must_not_include: [harsh_actives, fragrance]
+    must_flag_warning: false
+    notes: "System should prioritize and not overload routine (max 7 steps)"
+
+  - id: 28
+    name: "Severe cystic acne"
+    difficulty: medium
+    profile:
+      skin_type: oily
+      concerns: [cystic_acne, scarring]
+      age: 20
+      pregnancy: false
+      medications: []
+      allergies: []
+    query: "severe cystic acne treatment"
+    expected_keywords: [dermatologist, cystic, acne, severe]
+    expected_ingredients: [gentle_cleanser, SPF]
+    must_not_include: []
+    must_flag_warning: true
+    notes: "Severity escalation — must recommend dermatologist first"
+
+  - id: 29
+    name: "Lupus skin manifestation"
+    difficulty: hard
+    profile:
+      skin_type: sensitive
+      concerns: [lupus_rash, photosensitivity, redness]
+      age: 35
+      pregnancy: false
+      medications: [hydroxychloroquine]
+      allergies: []
+    query: "lupus skin care photosensitivity treatment"
+    expected_keywords: [SPF, lupus, photosensitivity, gentle]
+    expected_ingredients: [high_SPF, ceramides, gentle_cleanser]
+    must_not_include: [AHA, retinoids]
+    must_flag_warning: true
+    notes: "Lupus → mandatory dermatologist; hydroxychloroquine flagged"
+
+  - id: 30
+    name: "Transplant patient on immunosuppressants"
+    difficulty: hard
+    profile:
+      skin_type: dry
+      concerns: [dryness, skin_cancer_risk]
+      age: 55
+      pregnancy: false
+      medications: [tacrolimus_systemic, mycophenolate]
+      allergies: []
+    query: "immunosuppressed patient skin care cancer prevention"
+    expected_keywords: [SPF, gentle, immunosuppressant, cancer, skin]
+    expected_ingredients: [high_SPF, ceramides, gentle_cleanser]
+    must_not_include: [retinoids, AHA, exfoliants]
+    must_flag_warning: true
+    notes: "Immunosuppressant + skin cancer risk → strict sun protection + derm referral"

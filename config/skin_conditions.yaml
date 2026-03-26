@@ -1,0 +1,406 @@
+# config/skin_conditions.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Master taxonomy used by:
+#   - Metadata tagging during indexing
+#   - Questionnaire generation
+#   - RAG metadata filters
+#   - Safety guardrail lookups
+# ─────────────────────────────────────────────────────────────────────────────
+
+skin_types:
+  - oily
+  - dry
+  - combination
+  - normal
+  - sensitive
+  - acne_prone
+
+fitzpatrick_scale:
+  I: "Very fair, always burns, never tans"
+  II: "Fair, usually burns, sometimes tans"
+  III: "Medium, sometimes burns, always tans"
+  IV: "Olive, rarely burns, always tans"
+  V: "Brown, very rarely burns"
+  VI: "Dark, never burns"
+
+conditions:
+  acne:
+    subtypes: [comedonal, inflammatory, cystic, hormonal, fungal]
+    severity: [mild, moderate, severe]
+    keywords:
+      [
+        acne,
+        pimple,
+        blackhead,
+        whitehead,
+        comedone,
+        papule,
+        pustule,
+        nodule,
+        cyst,
+      ]
+
+  pigmentation:
+    subtypes:
+      [
+        melasma,
+        post_inflammatory_hyperpigmentation,
+        sun_spots,
+        freckles,
+        dark_circles,
+      ]
+    keywords:
+      [hyperpigmentation, melasma, dark spot, sun spot, PIH, uneven tone]
+
+  aging:
+    subtypes: [fine_lines, wrinkles, loss_of_elasticity, sagging, dullness]
+    keywords: [wrinkle, fine line, anti-aging, collagen, elastin, sagging]
+
+  barrier_damage:
+    subtypes: [dehydration, dryness, flakiness, tightness, sensitivity]
+    keywords: [dry, dehydrated, flaky, tight, sensitive, compromised barrier]
+
+  redness_vascular:
+    subtypes: [rosacea, erythema, couperose, spider_veins, perioral_dermatitis]
+    keywords: [rosacea, redness, flushing, blushing, broken capillaries]
+
+  eczema_dermatitis:
+    subtypes: [atopic_dermatitis, contact_dermatitis, seborrheic_dermatitis]
+    keywords: [eczema, dermatitis, itchy, inflamed, flare-up]
+
+  psoriasis:
+    subtypes: [plaque, guttate, inverse, pustular]
+    keywords: [psoriasis, plaque, scaling, silvery patches]
+
+  texture:
+    subtypes: [rough, bumpy, enlarged_pores, keratosis_pilaris, milia]
+    keywords: [rough texture, large pores, bumpy, KP, milia, closed comedones]
+
+  oiliness:
+    subtypes: [excess_sebum, shine, greasy]
+    keywords: [oily, shiny, greasy, sebum, T-zone]
+
+  sensitivity:
+    subtypes:
+      [reactive, stinging, burning, fragrance_sensitive, histamine_intolerance]
+    keywords: [sensitive, reactive, stinging, burning, tingling]
+
+active_ingredients:
+  exfoliants:
+    AHA: [glycolic_acid, lactic_acid, mandelic_acid, malic_acid, tartaric_acid]
+    BHA: [salicylic_acid, beta_lipohydroxy_acid]
+    PHA: [gluconolactone, lactobionic_acid]
+
+  retinoids:
+    OTC: [retinol, retinal, retinaldehyde, retinyl_palmitate, bakuchiol]
+    prescription: [tretinoin, adapalene_rx, tazarotene, trifarotene]
+    note: "Adapalene 0.1% is OTC in many countries"
+
+  antioxidants:
+    vitamin_c:
+      [
+        l_ascorbic_acid,
+        ascorbyl_glucoside,
+        sodium_ascorbyl_phosphate,
+        magnesium_ascorbyl_phosphate,
+      ]
+    others:
+      [
+        niacinamide,
+        vitamin_e,
+        resveratrol,
+        ferulic_acid,
+        coenzyme_q10,
+        astaxanthin,
+      ]
+
+  humectants:
+    [hyaluronic_acid, glycerin, sodium_PCA, urea, aloe_vera, panthenol]
+
+  occlusives: [petrolatum, lanolin, beeswax, dimethicone, squalane]
+
+  emollients: [ceramides, fatty_acids, shea_butter, jojoba_oil, squalane]
+
+  actives_brightening:
+    [
+      kojic_acid,
+      arbutin,
+      tranexamic_acid,
+      azelaic_acid,
+      licorice_root,
+      niacinamide,
+    ]
+
+  actives_acne:
+    OTC:
+      [
+        benzoyl_peroxide,
+        salicylic_acid,
+        niacinamide,
+        zinc,
+        sulfur,
+        tea_tree_oil,
+        azelaic_acid,
+      ]
+    prescription: [clindamycin, erythromycin, dapsone, tretinoin, isotretinoin]
+
+  SPF:
+    chemical:
+      [avobenzone, octinoxate, octocrylene, homosalate, octisalate, oxybenzone]
+    mineral: [zinc_oxide, titanium_dioxide]
+
+known_interactions:
+  # Pairs to AVOID using together (same routine)
+  avoid_together:
+    - [retinol, AHA, "irritation risk — use on alternating nights"]
+    - [retinol, BHA, "irritation risk — use on alternating nights"]
+    - [benzoyl_peroxide, retinol, "BP oxidizes retinol — use AM/PM split"]
+    - [
+        vitamin_c,
+        niacinamide,
+        "may form niacin at high conc — generally safe at <10%",
+      ]
+    - [AHA, vitamin_c, "both low pH — potential over-exfoliation"]
+    - [
+        retinol,
+        vitamin_c,
+        "both potent actives — pH incompatibility, use on alternating nights or AM/PM split",
+      ]
+    - [AHA, BHA, "combined exfoliation too aggressive for most skin types"]
+    - [
+        benzoyl_peroxide,
+        vitamin_c,
+        "BP oxidizes ascorbic acid — renders vitamin C ineffective",
+      ]
+    - [
+        hydroquinone,
+        benzoyl_peroxide,
+        "can cause temporary dark staining of skin",
+      ]
+    - [
+        retinol,
+        benzoyl_peroxide,
+        "combined irritation + oxidation — separate AM/PM",
+      ]
+
+  # Drug-ingredient interactions (topical ingredient + systemic medication)
+  drug_interactions:
+    - drug: tetracyclines # doxycycline, minocycline, tetracycline
+      avoid: [retinoids, AHA, BHA]
+      severity: warning
+      reason: "Tetracyclines + topical retinoids/acids increase photosensitivity and irritation risk significantly"
+    - drug: isotretinoin
+      avoid: [retinoids, AHA, BHA, benzoyl_peroxide, vitamin_c_high]
+      severity: warning
+      reason: "Isotretinoin thins the skin dramatically — no additional exfoliants or retinoids. Moisturize + SPF only."
+    - drug: immunosuppressants # methotrexate, cyclosporine, biologics
+      avoid: [AHA, BHA, retinoids, benzoyl_peroxide]
+      severity: warning
+      reason: "Immunosuppressed skin has compromised barrier — avoid all active exfoliants and irritants"
+    - drug: blood_thinners # warfarin, aspirin, clopidogrel
+      avoid: [vitamin_e, retinoids]
+      severity: caution
+      reason: "Vitamin E has mild antiplatelet effect; retinoids thin skin — both increase bruising/bleeding risk"
+    - drug: lithium
+      avoid: [drying_agents]
+      severity: info
+      reason: "Lithium commonly causes acne — avoid over-drying; focus on gentle hydration + niacinamide"
+    - drug: spironolactone
+      avoid: []
+      severity: info
+      reason: "Spironolactone treats hormonal acne — complement with gentle topicals, avoid irritants"
+    - drug: oral_antibiotics # clindamycin, erythromycin, doxycycline
+      synergy: [benzoyl_peroxide]
+      severity: info
+      reason: "Topical benzoyl peroxide helps prevent antibiotic resistance — generally recommended together"
+
+  # Pairs that WORK WELL together
+  synergistic:
+    - [
+        vitamin_c,
+        vitamin_e,
+        ferulic_acid,
+        "classic antioxidant trio — synergistic UV protection",
+      ]
+    - [niacinamide, zinc, "sebum control + anti-inflammatory"]
+    - [retinol, peptides, "anti-aging stack — use in separate steps"]
+    - [AHA, hyaluronic_acid, "exfoliate then hydrate"]
+    - [
+        ceramides,
+        fatty_acids,
+        cholesterol,
+        "complete barrier repair — 3:1:1 ratio ideal",
+      ]
+    - [
+        azelaic_acid,
+        niacinamide,
+        "brightening + anti-inflammatory without irritation",
+      ]
+    - [
+        centella_asiatica,
+        ceramides,
+        "soothing + barrier repair for sensitive skin",
+      ]
+
+pregnancy_avoid:
+  # Category A — strictly avoid (teratogenic / harmful)
+  - retinoids # All forms — teratogenic (retinol, tretinoin, adapalene, tazarotene, isotretinoin)
+  - hydroquinone # Significant systemic absorption; avoid entirely
+  - salicylic_acid_oral # Oral/high-dose — aspirin-class risk; topical ≤2% is debated but generally avoided
+  - salicylic_acid # Topical — conservative avoidance recommended
+  # Category B — avoid / use with caution
+  - benzoyl_peroxide # Limited safety data; use only if prescribed
+  - chemical_sunscreens # Oxybenzone especially — endocrine disruption concerns
+  - oxybenzone # Specific chemical UV filter to avoid
+  - formaldehyde_donors # DMDM hydantoin, imidazolidinyl urea, quaternium-15
+  # Category C — avoid as precaution
+  - essential_oils # Clary sage, rosemary, cinnamon bark — uterotonic potential
+  - camphor # Systemic absorption risk
+  - high_dose_vitamin_a # Supplements — teratogenic above 10,000 IU/day
+
+evidence_levels:
+  A: "Randomized controlled trial (RCT) or systematic review/meta-analysis"
+  B: "Cohort study, case-control, or multiple case series"
+  C: "Expert opinion, single case report, in-vitro, or animal study"
+
+# ── INCI Synonym Groups ──────────────────────────────────────────────────────
+# Maps a canonical ingredient name → all accepted INCI/trade name variants.
+# Used by SafetyGuard for allergen matching and metadata tagger for dedup.
+inci_synonyms:
+  retinol: [retinol, retinal, retinaldehyde, retinyl_palmitate, retinyl_acetate]
+  tretinoin: [tretinoin, retinoic_acid, all_trans_retinoic_acid]
+  adapalene: [adapalene, differin]
+  tazarotene: [tazarotene, tazorac]
+  isotretinoin: [isotretinoin, accutane, roaccutane]
+  salicylic_acid:
+    [salicylic_acid, beta_hydroxy_acid, BHA, 2_hydroxybenzoic_acid]
+  glycolic_acid: [glycolic_acid, hydroxyacetic_acid]
+  lactic_acid: [lactic_acid, 2_hydroxypropanoic_acid]
+  niacinamide: [niacinamide, nicotinamide, vitamin_b3]
+  ascorbic_acid:
+    [
+      ascorbic_acid,
+      l_ascorbic_acid,
+      vitamin_c,
+      ascorbyl_glucoside,
+      sodium_ascorbyl_phosphate,
+      magnesium_ascorbyl_phosphate,
+    ]
+  benzoyl_peroxide: [benzoyl_peroxide, BPO]
+  hydroquinone: [hydroquinone, HQ, 1_4_dihydroxybenzene]
+  azelaic_acid: [azelaic_acid, nonanedioic_acid, finacea, skinoren]
+  kojic_acid: [kojic_acid]
+  arbutin: [arbutin, alpha_arbutin, beta_arbutin]
+  hyaluronic_acid: [hyaluronic_acid, sodium_hyaluronate, HA]
+  ceramides: [ceramides, ceramide_np, ceramide_ap, ceramide_eop]
+  panthenol: [panthenol, dexpanthenol, provitamin_b5, d_panthenol]
+  tranexamic_acid: [tranexamic_acid, TXA]
+  bakuchiol: [bakuchiol]
+  vitamin_e: [vitamin_e, tocopherol, tocopheryl_acetate, alpha_tocopherol]
+  zinc_oxide: [zinc_oxide, ZnO]
+  titanium_dioxide: [titanium_dioxide, TiO2]
+  oxybenzone: [oxybenzone, benzophenone_3, BP_3]
+  fragrance:
+    [
+      fragrance,
+      parfum,
+      linalool,
+      limonene,
+      citronellol,
+      geraniol,
+      coumarin,
+      eugenol,
+    ]
+
+# ── Phototoxicity Flags ──────────────────────────────────────────────────────
+# Ingredients that increase UV sensitivity. Routines containing these MUST
+# include SPF or a phototoxicity warning from SafetyGuard.
+phototoxicity:
+  high_risk:
+    - retinol
+    - tretinoin
+    - adapalene
+    - tazarotene
+    - glycolic_acid
+    - lactic_acid
+    - mandelic_acid
+    - benzoyl_peroxide
+  moderate_risk:
+    - salicylic_acid
+    - ascorbic_acid # high % (≥15%) increases photosensitivity
+    - kojic_acid
+    - hydroquinone
+    - azelaic_acid
+  note: >
+    Any routine containing a high-risk photosensitizer MUST include daily
+    broad-spectrum SPF ≥30. Moderate-risk ingredients should include SPF
+    recommendation. SafetyGuard enforces this.
+
+# ── OTC Concentration Limits ─────────────────────────────────────────────────
+# Regulatory maximums for over-the-counter (non-prescription) use.
+# SafetyGuard validates recommended concentrations against these limits.
+concentration_limits:
+  retinol:
+    otc_max: "1%"
+    note: "Higher concentrations require dermatologist supervision"
+  tretinoin:
+    otc_max: "0.025%" # OTC in some markets, Rx in others
+    professional_max: "0.1%"
+    note: "Start at 0.025%, titrate up slowly"
+  hydroquinone:
+    otc_max: "2%"
+    professional_max: "4%"
+    note: "Limit use to 3-6 months; risk of ochronosis with prolonged use"
+  benzoyl_peroxide:
+    otc_max: "10%"
+    note: "2.5% equally effective with less irritation for most patients"
+  glycolic_acid:
+    otc_max: "10%" # daily-use products
+    professional_max: "70%" # professional peels only
+    note: "Daily use ≤10%; higher concentrations for professional peels only"
+  salicylic_acid:
+    otc_max: "2%" # leave-on products
+    note: "Rinse-off products may go higher; leave-on ≤2%"
+  lactic_acid:
+    otc_max: "12%"
+    note: "Start with ≤5% for sensitive skin"
+  niacinamide:
+    otc_max: "10%"
+    note: "5% is the most evidence-supported concentration; >10% may cause irritation"
+  ascorbic_acid:
+    otc_max: "20%"
+    note: "10-20% is the validated therapeutic range; >20% not more effective"
+  azelaic_acid:
+    otc_max: "10%"
+    professional_max: "20%"
+    note: "15-20% is prescription strength in most markets"
+  vitamin_e:
+    otc_max: "5%"
+    note: "Higher concentrations may cause contact dermatitis"
+
+# ── Age-Tier Safety Rules ────────────────────────────────────────────────────
+# Used by SafetyGuard._check_age_safety()
+age_safety:
+  pediatric:
+    max_age: 15
+    avoid:
+      - tretinoin # no prescription retinoids for young teens
+      - hydroquinone # not for pediatric use
+      - glycolic_acid # prefer gentler options
+    limit_concentration:
+      retinol: "0.25%"
+      salicylic_acid: "0.5%"
+      benzoyl_peroxide: "2.5%"
+    note: "Keep routines simple (cleanser + moisturizer + SPF). Minimize actives."
+  geriatric:
+    min_age: 65
+    caution:
+      - glycolic_acid # thinner skin, more sensitive
+      - benzoyl_peroxide # drying on already compromised barrier
+      - high_concentration_retinol
+    preferred:
+      - ceramides
+      - hyaluronic_acid
+      - peptides
+      - gentle_retinol # ≤0.3%
+    note: "Focus on barrier repair. Start all actives at lowest concentration."

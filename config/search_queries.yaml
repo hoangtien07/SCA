@@ -1,0 +1,78 @@
+# config/search_queries.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Search queries sent to Semantic Scholar + PubMed.
+# Organized by topic cluster. Add/remove freely — the collector
+# iterates all entries and deduplicates results by paper ID.
+# ─────────────────────────────────────────────────────────────────────────────
+
+semantic_scholar:
+  # Core topic
+  - "artificial intelligence personalized skincare"
+  - "machine learning skin care recommendation"
+  - "deep learning dermatology personalized treatment"
+  - "AI skin type classification"
+
+  # Specific conditions
+  - "acne vulgaris machine learning treatment"
+  - "atopic dermatitis artificial intelligence"
+  - "rosacea AI diagnosis treatment"
+  - "hyperpigmentation deep learning"
+  - "eczema machine learning personalized"
+  - "psoriasis AI treatment recommendation"
+  - "melasma artificial intelligence"
+  - "seborrheic dermatitis AI"
+
+  # Active ingredients + AI
+  - "retinol retinoid personalized dosing AI"
+  - "niacinamide skin benefit evidence review"
+  - "vitamin C ascorbic acid skincare efficacy"
+  - "hyaluronic acid skin hydration evidence"
+  - "AHA BHA chemical exfoliant skin evidence"
+  - "peptides anti-aging skincare clinical evidence"
+  - "SPF sunscreen AI recommendation"
+  - "ceramide skin barrier repair evidence"
+
+  # Technology
+  - "computer vision skin analysis dermatology"
+  - "skin image analysis deep learning"
+  - "facial skin condition detection neural network"
+  - "skin microbiome personalized cosmetics"
+  - "genomics personalized skincare"
+  - "Fitzpatrick skin type classification AI"
+
+  # Formulation
+  - "cosmetic formulation optimization AI"
+  - "ingredient interaction skin safety"
+  - "drug cosmetic interaction skin"
+
+pubmed:
+  # MeSH-optimized queries for clinical evidence
+  - "personalized medicine dermatology[MeSH] artificial intelligence"
+  - "acne vulgaris[MeSH] machine learning"
+  - "dermatitis atopic[MeSH] artificial intelligence"
+  - "skin diseases[MeSH] deep learning diagnosis"
+  - "cosmetics[MeSH] clinical trial efficacy"
+  - "retinoids[MeSH] systematic review"
+  - "sunscreening agents[MeSH] clinical evidence"
+  - "skin aging[MeSH] treatment artificial intelligence"
+  - "drug interactions[MeSH] cosmetics"
+  - "melanosis[MeSH] treatment machine learning"
+
+pmc_oa:
+  # Full-text PMC Open Access queries — RCTs, systematic reviews, guidelines
+  # These return full-text articles enabling section-aware chunking
+  - "acne vulgaris treatment randomized controlled trial"
+  - "atopic dermatitis management systematic review"
+  - "rosacea treatment clinical trial"
+  - "retinoids skin aging randomized"
+  - "niacinamide acne clinical trial"
+  - "chemical peels glycolic acid efficacy"
+  - "sunscreen photoprotection clinical evidence"
+  - "hyperpigmentation treatment systematic review"
+  - "skin barrier repair ceramides clinical"
+  - "psoriasis topical treatment review"
+  - "vitamin C ascorbic acid skin clinical trial"
+  - "benzoyl peroxide acne treatment efficacy"
+  - "azelaic acid rosacea acne review"
+  - "hyaluronic acid skin hydration clinical"
+  - "peptides anti-aging skin clinical evidence"

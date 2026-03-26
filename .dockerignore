@@ -1,0 +1,50 @@
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.venv
+venv
+.eggs
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+
+# Raw data (large, not needed in image unless pre-built)
+# Uncomment if you want to include pre-collected data:
+# data/raw/
+
+# Processed data (can be regenerated)
+data/processed/
+
+# Docs & skills (not needed at runtime)
+docs/
+skills/
+*.md
+!README.md
+
+# HTML roadmap
+skincare_ai_roadmap.html
+
+# Node
+node_modules
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+Dockerfile.streamlit
+docker-compose.yml

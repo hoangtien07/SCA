@@ -1,0 +1,174 @@
+
+<style>
+.phase { margin: 0 0 12px; }
+.phase-header { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.phase-badge { font-size:11px; font-weight:500; padding:3px 10px; border-radius:20px; white-space:nowrap; }
+.phase-title { font-size:15px; font-weight:500; color:var(--color-text-primary); }
+.phase-meta { font-size:12px; color:var(--color-text-secondary); margin-left:auto; white-space:nowrap; }
+.task-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.task-card { border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); padding:10px 12px; cursor:pointer; transition:border-color .15s; }
+.task-card:hover { border-color:var(--color-border-primary); }
+.task-label { font-size:12px; font-weight:500; color:var(--color-text-primary); margin-bottom:3px; }
+.task-desc { font-size:11px; color:var(--color-text-secondary); line-height:1.5; }
+.task-tag { display:inline-block; font-size:10px; font-weight:500; padding:1px 7px; border-radius:10px; margin-top:5px; }
+.divider { height:0.5px; background:var(--color-border-tertiary); margin:14px 0; }
+.stack-row { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+.stack-pill { font-size:11px; padding:2px 9px; border-radius:12px; border:0.5px solid var(--color-border-secondary); color:var(--color-text-secondary); }
+.section-label { font-size:11px; font-weight:500; color:var(--color-text-tertiary); text-transform:uppercase; letter-spacing:.05em; margin-bottom:6px; }
+</style>
+
+<!-- Phase 0 -->
+<div class="phase">
+  <div class="phase-header">
+    <span class="phase-badge" style="background:#E1F5EE;color:#0F6E56;">Phase 0</span>
+    <span class="phase-title">Foundation & Data Pipeline</span>
+    <span class="phase-meta">Tuần 1–2</span>
+  </div>
+  <div class="task-grid">
+    <div class="task-card" onclick="sendPrompt('Viết Python script thu thập bài báo skincare AI từ Semantic Scholar API, lọc theo relevance score và citation count')">
+      <div class="task-label">Knowledge harvesting</div>
+      <div class="task-desc">Script Python gọi Semantic Scholar + PubMed API, filter theo citation count ≥ 10, xuất JSON</div>
+      <span class="task-tag" style="background:#E1F5EE;color:#0F6E56;">Auto-script</span>
+    </div>
+    <div class="task-card" onclick="sendPrompt('Thiết kế metadata schema cho knowledge base bài báo skincare: skin conditions, ingredients, evidence level, study type')">
+      <div class="task-label">Metadata schema</div>
+      <div class="task-desc">Chuẩn hóa: skin_condition, active_ingredients, evidence_level (RCT/review/in-vitro), year, citations</div>
+      <span class="task-tag" style="background:#E1F5EE;color:#0F6E56;">Design</span>
+    </div>
+    <div class="task-card" onclick="sendPrompt('Chunking strategy tốt nhất cho bài báo y khoa: abstract, methods, conclusion tách riêng hay chunk theo token?')">
+      <div class="task-label">Chunking pipeline</div>
+      <div class="task-desc">Tách abstract / methods / results riêng. Mỗi chunk ≤ 512 tokens, giữ nguyên context bằng overlap</div>
+      <span class="task-tag" style="background:#E1F5EE;color:#0F6E56;">Pipeline</span>
+    </div>
+    <div class="task-card" onclick="sendPrompt('Setup ChromaDB local cho knowledge base skincare MVP, với metadata filtering theo skin_condition và evidence_level')">
+      <div class="task-label">Vector DB local</div>
+      <div class="task-desc">ChromaDB embedded (zero setup) cho dev. Migrate sang Qdrant Cloud khi production</div>
+      <span class="task-tag" style="background:#E1F5EE;color:#0F6E56;">Infrastructure</span>
+    </div>
+  </div>
+  <div class="section-label" style="margin-top:10px;">Stack phase này</div>
+  <div class="stack-row">
+    <span class="stack-pill">Python 3.12</span>
+    <span class="stack-pill">Semantic Scholar API</span>
+    <span class="stack-pill">PubMed E-utilities</span>
+    <span class="stack-pill">ChromaDB</span>
+    <span class="stack-pill">text-embedding-3-small</span>
+    <span class="stack-pill">LlamaIndex</span>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- Phase 1 -->
+<div class="phase">
+  <div class="phase-header">
+    <span class="phase-badge" style="background:#EEEDFE;color:#3C3489;">Phase 1</span>
+    <span class="phase-title">RAG Core + Skin Profiling</span>
+    <span class="phase-meta">Tuần 3–5</span>
+  </div>
+  <div class="task-grid">
+    <div class="task-card" onclick="sendPrompt('Viết FastAPI endpoint nhận skin profile JSON và trả về top-5 retrieved chunks từ knowledge base skincare với hybrid search')">
+      <div class="task-label">Hybrid retrieval API</div>
+      <div class="task-desc">FastAPI endpoint: nhận skin_profile → hybrid search (semantic + keyword + metadata filter) → top-K chunks</div>
+      <span class="task-tag" style="background:#EEEDFE;color:#3C3489;">Backend</span>
+    </div>
+    <div class="task-card" onclick="sendPrompt('Thiết kế 30-câu hỏi questionnaire đánh giá da toàn diện: loại da, conditions, allergies, medications, lifestyle')">
+      <div class="task-label">Skin questionnaire</div>
+      <div class="task-desc">30 câu hỏi chuẩn hóa: skin type, concerns, Fitzpatrick scale, allergies, current medications, lifestyle</div>
+      <span class="task-tag" style="background:#EEEDFE;color:#3C3489;">Product</span>
+    </div>
+    <div class="task-card" onclick="sendPrompt('System prompt cho LLM tổng hợp skincare regimen từ retrieved scientific papers, có citation, có contraindication check')">
+      <div class="task-label">LLM prompt engineering</div>
+      <div class="task-desc">System prompt: vai trò dermatologist AI, cite nguồn, output structured JSON phác đồ AM/PM</div>
+      <span class="task-tag" style="background:#EEEDFE;color:#3C3489;">AI</span>
+    </div>
+    <div class="task-card" onclick="sendPrompt('GPT-4o Vision prompt để phân tích ảnh da mặt: pore size, texture, hyperpigmentation, acne, rosacea')">
+      <div class="task-label">Vision analysis module</div>
+      <div class="task-desc">GPT-4o Vision: phân tích ảnh → structured JSON gồm detected conditions, severity, zones</div>
+      <span class="task-tag" style="background:#EEEDFE;color:#3C3489;">AI</span>
+    </div>
+  </div>
+  <div class="section-label" style="margin-top:10px;">Stack phase này</div>
+  <div class="stack-row">
+    <span class="stack-pill">FastAPI</span>
+    <span class="stack-pill">LlamaIndex</span>
+    <span class="stack-pill">GPT-4o Vision</span>
+    <span class="stack-pill">Claude claude-sonnet-4-6 (reasoning)</span>
+    <span class="stack-pill">Supabase</span>
+    <span class="stack-pill">Pydantic</span>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- Phase 2 -->
+<div class="phase">
+  <div class="phase-header">
+    <span class="phase-badge" style="background:#FAECE7;color:#993C1D;">Phase 2</span>
+    <span class="phase-title">MVP UI + End-to-end flow</span>
+    <span class="phase-meta">Tuần 6–8</span>
+  </div>
+  <div class="task-grid">
+    <div class="task-card" onclick="sendPrompt('Build Streamlit app cho skincare AI MVP: upload ảnh, điền questionnaire, hiển thị phác đồ AM/PM với citations')">
+      <div class="task-label">Streamlit MVP</div>
+      <div class="task-desc">UI nhanh nhất: upload ảnh + questionnaire form → call backend → hiển thị phác đồ có nguồn trích dẫn</div>
+      <span class="task-tag" style="background:#FAECE7;color:#993C1D;">Frontend</span>
+    </div>
+    <div class="task-card" onclick="sendPrompt('Safety guardrail cho skincare AI: check drug interaction, pregnancy-safe ingredients, allergy detection từ user profile')">
+      <div class="task-label">Safety guardrails</div>
+      <div class="task-desc">Check contraindication: retinol + pregnancy, vitamin C + niacinamide conflict, known allergens</div>
+      <span class="task-tag" style="background:#FAECE7;color:#993C1D;">Safety</span>
+    </div>
+    <div class="task-card" onclick="sendPrompt('Output format phác đồ skincare cá nhân: JSON schema cho AM routine, PM routine, weekly treatments, ingredients to avoid')">
+      <div class="task-label">Phác đồ output format</div>
+      <div class="task-desc">Structured JSON → render: AM/PM steps, active ingredients, % concentration, evidence grade A/B/C</div>
+      <span class="task-tag" style="background:#FAECE7;color:#993C1D;">Product</span>
+    </div>
+    <div class="task-card" onclick="sendPrompt('Deploy FastAPI + Streamlit skincare AI app lên Railway hoặc Render, với Qdrant Cloud cho vector DB')">
+      <div class="task-label">Deploy to cloud</div>
+      <div class="task-desc">Railway.app (FastAPI) + Streamlit Cloud (UI) + Qdrant Cloud free tier. Chi phí: ~$20–30/tháng</div>
+      <span class="task-tag" style="background:#FAECE7;color:#993C1D;">Deploy</span>
+    </div>
+  </div>
+  <div class="section-label" style="margin-top:10px;">Stack phase này</div>
+  <div class="stack-row">
+    <span class="stack-pill">Streamlit</span>
+    <span class="stack-pill">Railway.app</span>
+    <span class="stack-pill">Qdrant Cloud</span>
+    <span class="stack-pill">Supabase (users + profiles)</span>
+    <span class="stack-pill">Guardrails.ai</span>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- Phase 3 -->
+<div class="phase">
+  <div class="phase-header">
+    <span class="phase-badge" style="background:#FAEEDA;color:#854F0B;">Phase 3</span>
+    <span class="phase-title">Iteration & Quality</span>
+    <span class="phase-meta">Tuần 9–12+</span>
+  </div>
+  <div class="task-grid">
+    <div class="task-card" onclick="sendPrompt('Cách eval chất lượng RAG pipeline cho skincare AI: RAGAS metrics, faithfulness, answer relevancy')">
+      <div class="task-label">RAG evaluation</div>
+      <div class="task-desc">RAGAS: đo faithfulness, answer relevancy, context recall. Tạo test set 50 cases trước khi ship</div>
+      <span class="task-tag" style="background:#FAEEDA;color:#854F0B;">Quality</span>
+    </div>
+    <div class="task-card" onclick="sendPrompt('Cách theo dõi follow-up tiến triển da: so sánh ảnh theo thời gian, update routine dựa trên feedback người dùng')">
+      <div class="task-label">Follow-up tracking</div>
+      <div class="task-desc">User upload ảnh định kỳ, AI compare progress, adjust routine. Lưu timeline trong Supabase</div>
+      <span class="task-tag" style="background:#FAEEDA;color:#854F0B;">Feature</span>
+    </div>
+    <div class="task-card" onclick="sendPrompt('Nâng cấp từ Streamlit lên Next.js cho skincare AI app: khi nào cần và tại sao?')">
+      <div class="task-label">UI upgrade path</div>
+      <div class="task-desc">Khi có 10+ users thật → migrate sang Next.js + shadcn/ui cho UX tốt hơn, mobile-friendly</div>
+      <span class="task-tag" style="background:#FAEEDA;color:#854F0B;">Scale</span>
+    </div>
+    <div class="task-card" onclick="sendPrompt('Knowledge base auto-update: tự động crawl bài báo mới từ PubMed mỗi tuần và re-index vào Qdrant')">
+      <div class="task-label">KB auto-refresh</div>
+      <div class="task-desc">Cron job hàng tuần: crawl bài mới → filter → embed → upsert vào vector DB. Knowledge luôn cập nhật</div>
+      <span class="task-tag" style="background:#FAEEDA;color:#854F0B;">Automation</span>
+    </div>
+  </div>
+</div>
