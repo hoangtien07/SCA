@@ -10,15 +10,22 @@ Pipeline:
   3. Reciprocal Rank Fusion to merge results
   4. Cross-encoder reranking for precision
   5. Score-based final ranking (evidence level + citations boost)
+
+Cross-encoder reranker runs on CPU by default.
+For GPU: set device='cuda' in CrossEncoder init.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
 from src.pipeline.indexer import ChromaIndexer
 from src.pipeline.bm25_index import BM25Index, rrf_fuse
+
+if TYPE_CHECKING:
+    from sentence_transformers import CrossEncoder
 
 
 @dataclass
@@ -50,15 +57,20 @@ class RAGRetriever:
         )
     """
 
+    _RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
     def __init__(
         self,
         indexer: ChromaIndexer,
         bm25: BM25Index | None = None,
         top_k: int = 8,
+        use_reranker: bool = True,
     ):
         self.indexer = indexer
         self.bm25 = bm25
         self.top_k = top_k
+        self.use_reranker = use_reranker
+        self._reranker: CrossEncoder | None = None
 
     def retrieve(
         self,
@@ -77,7 +89,7 @@ class RAGRetriever:
             top_k: Override default top_k
         """
         k = top_k or self.top_k
-        fetch_k = k * 3  # over-fetch for reranking headroom
+        fetch_k = k * 4  # over-fetch for reranking headroom
 
         # ── Build metadata filter ─────────────────────────────────────────
         filters = self._build_filters(skin_conditions, evidence_levels)
@@ -112,7 +124,7 @@ class RAGRetriever:
             fused = dense_results
 
         # ── Re-rank: boost by citation count + evidence level ─────────────
-        ranked = self._rerank(fused)
+        ranked = self._rerank(fused, query=query)
 
         return ranked[:k]
 
@@ -198,17 +210,57 @@ class RAGRetriever:
 
         return queries
 
-    def _rerank(self, results: list[dict]) -> list[RetrievalResult]:
+    def _rerank(self, results: list[dict], *, query: str) -> list[RetrievalResult]:
         """
-        Combine semantic score with citation count and evidence level.
-        Score = semantic_score * 0.7 + citation_boost * 0.2 + evidence_boost * 0.1
+        Rerank candidates using cross-encoder when available, otherwise
+        fall back to the manual citation + evidence formula.
+
+        When the cross-encoder is active:
+          final_score = reranker_score * 0.85 + boost * 0.15
+
+        Manual fallback (use_reranker=False or model unavailable):
+          final_score = semantic_score * 0.7 + cit_boost + ev_boost * 0.1
         """
-        evidence_boost = {"A": 0.3, "B": 0.2, "C": 0.0}
+        if not results:
+            return []
+
+        evidence_boost_map: dict[str, float] = {"A": 0.3, "B": 0.2, "C": 0.0}
         max_citations = max(
             (r["metadata"].get("citation_count", 0) for r in results),
             default=1,
         ) or 1
 
+        # ── Cross-encoder path ────────────────────────────────────────────
+        reranker = self._load_reranker() if self.use_reranker else None
+
+        if reranker is not None:
+            pairs: list[list[str]] = [
+                [query, r["text"]] for r in results
+            ]
+            ce_scores: list[float] = reranker.predict(pairs).tolist()
+
+            # Normalise cross-encoder scores to [0, 1]
+            ce_min = min(ce_scores)
+            ce_max = max(ce_scores)
+            ce_range = ce_max - ce_min if ce_max != ce_min else 1.0
+
+            scored: list[RetrievalResult] = []
+            for r, raw_ce in zip(results, ce_scores):
+                meta = r["metadata"]
+                norm_ce = (raw_ce - ce_min) / ce_range
+
+                cit_count = meta.get("citation_count", 0)
+                ev = meta.get("evidence_level", "C")
+                cit_boost = cit_count / max_citations
+                ev_boost = evidence_boost_map.get(ev, 0.0)
+                boost = cit_boost * 0.6 + ev_boost * 0.4
+
+                final_score = norm_ce * 0.85 + boost * 0.15
+                scored.append(self._to_result(r, final_score))
+
+            return sorted(scored, key=lambda x: x.score, reverse=True)
+
+        # ── Manual fallback path ──────────────────────────────────────────
         scored = []
         for r in results:
             meta = r["metadata"]
@@ -217,25 +269,56 @@ class RAGRetriever:
             ev = meta.get("evidence_level", "C")
 
             cit_boost = (cit_count / max_citations) * 0.2
-            ev_score = evidence_boost.get(ev, 0.0)
+            ev_score = evidence_boost_map.get(ev, 0.0)
             final_score = sem_score * 0.7 + cit_boost + ev_score * 0.1
 
-            conditions_raw = meta.get("skin_conditions", "")
-            ingredients_raw = meta.get("active_ingredients", "")
-
-            scored.append(RetrievalResult(
-                text=r["text"],
-                title=meta.get("title", ""),
-                url=meta.get("url", ""),
-                doi=meta.get("doi", ""),
-                year=meta.get("year", 0),
-                journal=meta.get("journal", ""),
-                evidence_level=ev,
-                study_type=meta.get("study_type", ""),
-                skin_conditions=conditions_raw.split(",") if conditions_raw else [],
-                active_ingredients=ingredients_raw.split(",") if ingredients_raw else [],
-                score=final_score,
-                citation_count=cit_count,
-            ))
+            scored.append(self._to_result(r, final_score))
 
         return sorted(scored, key=lambda x: x.score, reverse=True)
+
+    @staticmethod
+    def _to_result(r: dict, score: float) -> RetrievalResult:
+        """Convert a raw result dict + computed score into a RetrievalResult."""
+        meta = r["metadata"]
+        conditions_raw: str = meta.get("skin_conditions", "")
+        ingredients_raw: str = meta.get("active_ingredients", "")
+        return RetrievalResult(
+            text=r["text"],
+            title=meta.get("title", ""),
+            url=meta.get("url", ""),
+            doi=meta.get("doi", ""),
+            year=meta.get("year", 0),
+            journal=meta.get("journal", ""),
+            evidence_level=meta.get("evidence_level", "C"),
+            study_type=meta.get("study_type", ""),
+            skin_conditions=conditions_raw.split(",") if conditions_raw else [],
+            active_ingredients=ingredients_raw.split(",") if ingredients_raw else [],
+            score=score,
+            citation_count=meta.get("citation_count", 0),
+        )
+
+    def _load_reranker(self) -> CrossEncoder | None:
+        """
+        Lazy-load the cross-encoder model on first call.
+
+        Returns the CrossEncoder instance, or None if sentence-transformers
+        is not installed.
+        """
+        if self._reranker is not None:
+            return self._reranker
+
+        try:
+            from sentence_transformers import CrossEncoder as _CE
+
+            logger.info(
+                f"[RAGRetriever] Loading cross-encoder model: {self._RERANKER_MODEL}"
+            )
+            self._reranker = _CE(self._RERANKER_MODEL)
+            return self._reranker
+        except ImportError:
+            logger.warning(
+                "[RAGRetriever] sentence-transformers not installed — "
+                "falling back to manual scoring."
+            )
+            self.use_reranker = False
+            return None
