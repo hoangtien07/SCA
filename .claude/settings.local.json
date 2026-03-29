@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(~/AppData/Local/Programs/Python/Python314/python.exe -m pytest tests/test_safety_regression.py tests/test_retriever.py tests/test_collectors.py -v --tb=short)"
+    ]
+  }
+}

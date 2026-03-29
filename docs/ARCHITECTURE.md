@@ -87,6 +87,42 @@ User uploads photo + submits questionnaire
 
 ---
 
+## Layer 2.5 — Knowledge Graph (optional)
+
+A Neo4j knowledge graph sits between the vector knowledge base (Layer 2) and
+the AI agents (Layer 3). It encodes **structured relational facts** that are
+difficult to capture in unstructured text embeddings:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Layer 3 — AI Agents                                        │
+│  (receives: RAG chunks + structured graph facts)            │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+┌────────────────────────▼────────────────────────────────────┐
+│  Layer 2.5 — Knowledge Graph (optional, Neo4j)             │
+│  GraphRetriever: augment_retrieval_results()                │
+│  src/agents/graph_retriever.py                             │
+│  docs/GRAPHRAG_DESIGN.md                                   │
+│                                                             │
+│  Nodes:  Ingredient, Condition, Product                     │
+│  Edges:  CONFLICTS_WITH, CONTRAINDICATED_IN,               │
+│           TREATS_CONDITION, CONTAINS                        │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+┌────────────────────────▼────────────────────────────────────┐
+│  Layer 2 — Vector Knowledge Base                            │
+│  ChromaDB (dev) / Qdrant (prod)                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Status:** Stub implementation — `GraphRetriever` methods raise `NotImplementedError`
+until Neo4j is configured. The pipeline works without Neo4j.
+
+**Setup:** See `docs/GRAPHRAG_DESIGN.md` for full schema, sample queries, and setup.
+
+---
+
 ## Component swap guide
 
 Each component can be replaced independently:

@@ -64,6 +64,23 @@ with st.sidebar:
     )
 
     st.divider()
+    st.subheader("Advanced options")
+    show_xai = st.checkbox(
+        "Show AI explanation heatmap",
+        value=False,
+        help=(
+            "Uses LIME + MobileNetV2 surrogate to highlight skin regions that influenced "
+            "the analysis. Requires xai_enabled=True in settings. "
+            "Note: this is an approximation of GPT-4o's reasoning."
+        ),
+    )
+    use_async = st.checkbox(
+        "Use async generation (requires Redis)",
+        value=False,
+        help="Submits to background queue and polls for result. Shows progress bar.",
+    )
+
+    st.divider()
     st.caption("⚠️ For informational purposes only. Not a substitute for dermatologist advice.")
 
 
@@ -228,20 +245,84 @@ if submitted:
         "skin_sensitivity": skin_sensitivity,
     }
 
+    # ── Async path (Prompt #06) ───────────────────────────────────────────────
+    if use_async:
+        st.info("Submitting to async queue... (requires Redis)")
+        try:
+            from src.workers.tasks import generate_regimen_task
+            task = generate_regimen_task.delay(
+                profile_dict=profile_raw,
+            )
+            task_id = task.id
+
+            progress_bar = st.progress(0, text="Queued...")
+            status_text = st.empty()
+            max_polls = 80  # 80 × 1.5s = 2 min timeout
+
+            for _ in range(max_polls):
+                import time as _time
+                _time.sleep(1.5)
+
+                try:
+                    from celery.result import AsyncResult
+                    from src.workers.celery_app import celery_app
+                    result = AsyncResult(task_id, app=celery_app)
+                    meta = result.info or {}
+                    status = meta.get("status", result.state)
+                    progress = meta.get("progress", 0)
+                except Exception:
+                    status = "UNKNOWN"
+                    progress = 0
+
+                status_text.text(f"Status: {status}")
+                progress_bar.progress(min(progress, 100), text=status)
+
+                if status == "SUCCESS":
+                    st.success("Regimen ready!")
+                    # Store result in session state — result is in meta["result"]
+                    # For full async display, reload page
+                    st.info("Async result stored. Refresh to see full results.")
+                    st.stop()
+                elif status == "FAILURE":
+                    st.error(f"Generation failed: {meta.get('error', 'Unknown error')}")
+                    st.stop()
+
+            st.warning("Timed out waiting for async result. Try synchronous mode.")
+            st.stop()
+        except Exception as e:
+            st.warning(f"Async mode unavailable ({e}). Falling back to synchronous.")
+            # Fall through to synchronous path
+
     with st.spinner("Analyzing your skin profile..."):
         # ── Vision analysis ───────────────────────────────────────────────
         vision_data = None
+        xai_result = None
         if uploaded_file:
             try:
                 from src.agents.vision_analyzer import VisionAnalyzer
                 analyzer = VisionAnalyzer(api_key=openai_key)
                 uploaded_file.seek(0)
+                image_bytes_for_xai = uploaded_file.read()
                 vision_data = analyzer.analyze_bytes(
-                    uploaded_file.read(),
+                    image_bytes_for_xai,
                     media_type=f"image/{uploaded_file.type.split('/')[-1]}"
                 )
                 # Merge vision + questionnaire
                 profile = analyzer.merge_with_questionnaire(vision_data, profile_raw)
+
+                # XAI explanation (Prompt #12) — opt-in
+                if show_xai and settings.xai_enabled:
+                    try:
+                        from src.agents.xai_explainer import VisionExplainer
+                        explainer = VisionExplainer(
+                            num_samples=settings.xai_num_samples,
+                            surrogate_model=settings.xai_surrogate_model,
+                        )
+                        primary_cond = vision_data.detected_conditions[0] if vision_data.detected_conditions else ""
+                        xai_result = explainer.explain_analysis(image_bytes_for_xai, condition=primary_cond)
+                    except Exception as e:
+                        st.warning(f"XAI explanation failed ({e}), continuing without heatmap.")
+
             except Exception as e:
                 st.warning(f"Vision analysis failed ({e}), proceeding with questionnaire only.")
                 profile = profile_raw
@@ -296,6 +377,7 @@ if submitted:
             st.session_state["evidence"] = evidence
             st.session_state["safety"] = safety_report
             st.session_state["vision"] = vision_data
+            st.session_state["xai"] = xai_result
 
         except Exception as e:
             st.error(f"Regimen generation failed: {e}")
@@ -318,6 +400,7 @@ with tab_result:
     evidence = st.session_state["evidence"]
     safety = st.session_state["safety"]
     vision = st.session_state.get("vision")
+    xai = st.session_state.get("xai")
 
     # ── Safety flags ──────────────────────────────────────────────────────────
     if safety.has_warnings:
@@ -344,6 +427,31 @@ with tab_result:
                 st.metric("Visible pores", vision.visible_pores)
                 st.metric("Fitzpatrick estimate", vision.fitzpatrick_estimate)
             st.caption(f"Vision confidence note: {vision.confidence_note}")
+
+    # ── XAI heatmap (Prompt #12) ──────────────────────────────────────────────
+    if xai and getattr(xai, "heatmap_base64", ""):
+        with st.expander("AI Explanation Heatmap (LIME surrogate)"):
+            st.warning(
+                "APPROXIMATION: This heatmap uses MobileNetV2 (ImageNet) as a surrogate "
+                "for GPT-4o Vision. It highlights regions that influenced the surrogate's "
+                "skin classification and may not perfectly reflect GPT-4o's reasoning."
+            )
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("**Heatmap overlay**")
+                st.markdown(
+                    f'<img src="data:image/png;base64,{xai.heatmap_base64}" '
+                    f'style="width:100%; border-radius:8px;">',
+                    unsafe_allow_html=True,
+                )
+            with c2:
+                st.markdown("**Top active regions**")
+                for region in getattr(xai, "top_regions", []):
+                    st.markdown(f"- {region}")
+                if hasattr(xai, "confidence"):
+                    st.metric("Surrogate confidence", f"{xai.confidence:.1%}")
+                if hasattr(xai, "explanation_text"):
+                    st.caption(xai.explanation_text)
 
     st.divider()
 

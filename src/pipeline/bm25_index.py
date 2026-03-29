@@ -168,7 +168,7 @@ def rrf_fuse(
 
     # Score sparse results
     for rank, r in enumerate(sparse_results, 1):
-        cid = r.get("chunk_id", r["metadata"].get("chunk_id", f"sparse_{rank}"))
+        cid = r["chunk_id"] if "chunk_id" in r else r.get("metadata", {}).get("chunk_id", f"sparse_{rank}")
         scores[cid] = scores.get(cid, 0) + sparse_weight / (k + rank)
         if cid not in doc_map:
             doc_map[cid] = r

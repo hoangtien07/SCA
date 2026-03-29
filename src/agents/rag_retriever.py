@@ -78,6 +78,7 @@ class RAGRetriever:
         skin_conditions: list[str] | None = None,
         evidence_levels: list[str] | None = None,
         top_k: int | None = None,
+        pregnancy: bool = False,
     ) -> list[RetrievalResult]:
         """
         Retrieve relevant chunks using hybrid dense+sparse search.
@@ -87,7 +88,19 @@ class RAGRetriever:
             skin_conditions: Filter to papers mentioning these conditions
             evidence_levels: Filter to papers with these evidence grades (A/B/C)
             top_k: Override default top_k
+            pregnancy: Never cache pregnancy requests
         """
+        # ── Semantic cache check (Layer 1, TTL 24h) ───────────────────────
+        _cache = self._get_cache()
+        if _cache is not None and not pregnancy:
+            cache_key = f"{query}|{skin_conditions}|{evidence_levels}"
+            cached = _cache.get(cache_key, "retrieval")
+            if cached is not None:
+                try:
+                    return [RetrievalResult(**r) for r in cached]
+                except Exception:
+                    pass  # Corrupted cache entry — continue to fresh retrieval
+
         k = top_k or self.top_k
         fetch_k = k * 4  # over-fetch for reranking headroom
 
@@ -126,7 +139,35 @@ class RAGRetriever:
         # ── Re-rank: boost by citation count + evidence level ─────────────
         ranked = self._rerank(fused, query=query)
 
-        return ranked[:k]
+        results = ranked[:k]
+
+        # ── Store in cache ────────────────────────────────────────────────
+        if _cache is not None and not pregnancy and results:
+            try:
+                from config.settings import settings
+                cache_key = f"{query}|{skin_conditions}|{evidence_levels}"
+                serialized = [
+                    {
+                        "text": r.text,
+                        "title": r.title,
+                        "url": r.url,
+                        "doi": r.doi,
+                        "year": r.year,
+                        "journal": r.journal,
+                        "evidence_level": r.evidence_level,
+                        "study_type": r.study_type,
+                        "skin_conditions": r.skin_conditions,
+                        "active_ingredients": r.active_ingredients,
+                        "score": r.score,
+                        "citation_count": r.citation_count,
+                    }
+                    for r in results
+                ]
+                _cache.set(cache_key, serialized, "retrieval", ttl=settings.cache_retrieval_ttl)
+            except Exception:
+                pass
+
+        return results
 
     def build_query_from_profile(self, profile: dict) -> str:
         """
@@ -152,6 +193,24 @@ class RAGRetriever:
         query = " ".join(parts) + " treatment skincare evidence"
         logger.debug(f"[RAGRetriever] Built query: {query!r}")
         return query
+
+    def _get_cache(self):
+        """Return SemanticCache if enabled, else None."""
+        try:
+            from config.settings import settings
+            if not settings.cache_enabled:
+                return None
+            from src.cache.semantic_cache import SemanticCache
+            from src.pipeline.embedder import get_embedder
+            if not hasattr(self, "_cache"):
+                self._cache = SemanticCache(
+                    redis_url=settings.redis_url,
+                    embedder=get_embedder(settings),
+                    threshold=settings.cache_similarity_threshold,
+                )
+            return self._cache
+        except Exception:
+            return None
 
     # ── Internal ──────────────────────────────────────────────────────────────
 

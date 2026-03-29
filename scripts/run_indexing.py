@@ -98,18 +98,55 @@ def main(args: argparse.Namespace) -> None:
     console.print(f"      Average chunk size: {avg_tokens:.0f} tokens")
 
     # ── 4. Embed + Index ──────────────────────────────────────────────────────
-    console.print(f"\n[4/4] Embedding + indexing ({args.backend})...")
+    embedding_provider = args.embedding_provider or settings.embedding_provider
 
-    if not settings.openai_api_key:
-        console.print("[red]OPENAI_API_KEY not set in .env[/red]")
+    console.print(f"\n[4/4] Embedding + indexing ({args.backend}, provider={embedding_provider})...")
+
+    # Build embedder
+    from src.pipeline.embedder import get_embedder
+    # Temporarily override provider for this run
+    settings_copy = type("S", (), dict(
+        openai_api_key=settings.openai_api_key,
+        anthropic_api_key=settings.anthropic_api_key,
+        embedding_model=settings.embedding_model,
+        embedding_provider=embedding_provider,
+        embedding_device=settings.embedding_device,
+        embedding_batch_size=settings.embedding_batch_size,
+    ))()
+
+    if embedding_provider == "openai" and not settings.openai_api_key:
+        console.print("[red]OPENAI_API_KEY not set in .env (required for openai embedding provider)[/red]")
         sys.exit(1)
 
+    try:
+        embedder = get_embedder(settings_copy)
+    except Exception as e:
+        console.print(f"[red]Failed to create embedder: {e}[/red]")
+        sys.exit(1)
+
+    # Handle --reindex: delete existing collection
+    if args.reindex and args.backend == "chroma":
+        import chromadb
+        console.print("  [yellow]--reindex flag set: deleting existing collection...[/yellow]")
+        try:
+            chroma_client = chromadb.PersistentClient(path=settings.chroma_persist_dir)
+            chroma_client.delete_collection(ChromaIndexer.COLLECTION_NAME)
+            console.print("  Existing collection deleted.")
+        except Exception:
+            console.print("  No existing collection to delete.")
+
     if args.backend == "chroma":
-        indexer = ChromaIndexer(
-            persist_dir=settings.chroma_persist_dir,
-            embedding_model=settings.embedding_model,
-            openai_api_key=settings.openai_api_key,
-        )
+        try:
+            indexer = ChromaIndexer(
+                persist_dir=settings.chroma_persist_dir,
+                embedding_model=settings.embedding_model,
+                openai_api_key=settings.openai_api_key,
+                embedder=embedder,
+            )
+        except ValueError as e:
+            console.print(f"[red]{e}[/red]")
+            console.print("Use [bold]--reindex[/bold] to rebuild the collection with the new model.")
+            sys.exit(1)
     elif args.backend == "qdrant":
         from src.pipeline.indexer import QdrantIndexer
         if not settings.qdrant_url:
@@ -163,5 +200,16 @@ if __name__ == "__main__":
     parser.add_argument("--input", default="data/raw/combined.jsonl")
     parser.add_argument("--backend", choices=["chroma", "qdrant"], default="chroma")
     parser.add_argument("--yes", "-y", action="store_true", help="Skip cost confirmation")
+    parser.add_argument(
+        "--embedding-provider",
+        choices=["local", "openai"],
+        default=None,
+        help="Override embedding provider (local=PubMedBERT, openai=text-embedding-3-small)",
+    )
+    parser.add_argument(
+        "--reindex",
+        action="store_true",
+        help="Delete existing ChromaDB collection and rebuild from scratch",
+    )
     args = parser.parse_args()
     main(args)

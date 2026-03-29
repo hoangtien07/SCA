@@ -41,3 +41,22 @@ Pillow==10.4.0                   # image handling
 rich==13.7.1                     # pretty terminal output
 loguru==0.7.2                    # logging
 tenacity==8.4.2                  # retry logic
+
+# ── Observability ─────────────────────────────────────────────────────────────
+langsmith>=0.1.83                # LangSmith tracing (optional — set langsmith_tracing=True)
+
+# ── Local embeddings (Prompt #04) ─────────────────────────────────────────────
+# sentence-transformers already included above for cross-encoder reranking
+# NeuML/pubmedbert-base-embeddings is downloaded at runtime via sentence-transformers
+
+# ── Async task queue (Prompt #06) ─────────────────────────────────────────────
+celery[redis]==5.3.6
+redis==5.0.4
+flower==2.0.1
+
+# ── Graph / cosmetic data (Prompt #10) ────────────────────────────────────────
+pyarrow>=16.0.0
+
+# ── XAI — explainability (Prompt #12) ────────────────────────────────────────
+lime==0.2.0.1
+shap==0.46.0

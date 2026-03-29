@@ -2,12 +2,18 @@
 tests/test_safety_regression.py
 Safety regression tests — covers all SafetyGuard check paths.
 Run without API keys, no network required.
+
+Prompt #05 additions:
+  - test_llm_judge_high_concentration_vitamin_c_retinol
+  - test_llm_judge_multiple_ahas
+  - test_llm_judge_standard_safe_routine
+  All three mock the Anthropic API — no real API calls made.
 """
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.agents.safety_guard import SafetyGuard
+from src.agents.safety_guard import SafetyGuard, LLMSafetyJudge
 
 
 # ── Test fixtures ─────────────────────────────────────────────────────────────
@@ -246,6 +252,166 @@ def test_allergen_no_false_positive():
     assert len(allergen_flags) == 0
 
 
+# ── Prompt #05: LLM judge tests (Anthropic API mocked) ───────────────────────
+
+def _make_mock_judge(response_dict: dict):
+    """Create a mock LLMSafetyJudge that returns a fixed response without API calls."""
+    from unittest.mock import MagicMock, patch
+
+    class MockJudge(LLMSafetyJudge):
+        def __init__(self):
+            super().__init__(api_key="mock-key")
+
+        def judge(self, ingredients, profile):
+            return response_dict
+
+    return MockJudge()
+
+
+def test_llm_judge_high_concentration_vitamin_c_retinol():
+    """
+    High-concentration Vitamin C + Retinol: LLM judge should detect pH
+    incompatibility concern. Mock API returns a high-confidence warning.
+    """
+    # Build guard with mocked LLM judge
+    guard = SafetyGuard(use_llm_judge=True, anthropic_api_key="mock")
+    guard._llm_judge = _make_mock_judge({
+        "additional_flags": [
+            {
+                "severity": "caution",
+                "message": "High-dose Vitamin C (20%) combined with retinol may cause pH incompatibility and oxidation instability",
+                "affected_ingredients": ["ascorbic acid", "retinol"],
+                "confidence": 0.85,
+            }
+        ],
+        "overall_assessment": "caution",
+    })
+
+    regimen = MockRegimen(
+        am=[MockStep(["ascorbic acid 20%"])],
+        pm=[MockStep(["retinol 0.5%"])],
+    )
+    profile = {"pregnancy": False, "medications": [], "concerns": []}
+    report = guard.check(regimen, profile)
+
+    llm_flags = [f for f in report.flags if getattr(f, "source", "") == "llm_judge"]
+    assert len(llm_flags) > 0
+    assert any("vitamin c" in f.message.lower() or "ascorbic" in f.message.lower()
+               or "ph" in f.message.lower() for f in llm_flags)
+
+
+def test_llm_judge_multiple_ahas():
+    """
+    Multiple AHAs stacked: LLM judge should flag over-exfoliation risk.
+    Mock API returns a warning with confidence > 0.7.
+    """
+    guard = SafetyGuard(use_llm_judge=True, anthropic_api_key="mock")
+    guard._llm_judge = _make_mock_judge({
+        "additional_flags": [
+            {
+                "severity": "warning",
+                "message": "Stacking multiple AHAs (glycolic, lactic, mandelic) significantly increases risk of over-exfoliation and barrier damage",
+                "affected_ingredients": ["glycolic acid", "lactic acid", "mandelic acid"],
+                "confidence": 0.92,
+            }
+        ],
+        "overall_assessment": "review_needed",
+    })
+
+    regimen = MockRegimen(
+        pm=[MockStep(["glycolic acid 8%", "lactic acid 5%", "mandelic acid 5%"])],
+    )
+    profile = {"pregnancy": False, "medications": [], "concerns": []}
+    report = guard.check(regimen, profile)
+
+    llm_flags = [f for f in report.flags if getattr(f, "source", "") == "llm_judge"]
+    assert len(llm_flags) > 0
+
+
+def test_llm_judge_standard_safe_routine():
+    """
+    Standard safe routine: LLM judge returns empty flags.
+    Existing rule-based tests should still pass (no regression).
+    Mock API returns no additional flags.
+    """
+    guard = SafetyGuard(use_llm_judge=True, anthropic_api_key="mock")
+    guard._llm_judge = _make_mock_judge({
+        "additional_flags": [],
+        "overall_assessment": "safe",
+    })
+
+    regimen = MockRegimen(
+        am=[
+            MockStep(["niacinamide 5%"], product_type="Serum"),
+            MockStep(["zinc oxide"], product_type="SPF 50 Sunscreen"),
+        ],
+        pm=[MockStep(["ceramides", "hyaluronic acid"], product_type="Moisturizer")],
+    )
+    profile = {"pregnancy": False, "medications": [], "concerns": []}
+    report = guard.check(regimen, profile)
+
+    llm_flags = [f for f in report.flags if getattr(f, "source", "") == "llm_judge"]
+    assert len(llm_flags) == 0  # no LLM flags for safe routine
+
+    # All existing rule-based checks should still pass
+    all_flags = report.flags
+    pregnancy_flags = [f for f in all_flags if "pregnancy" in f.message.lower()]
+    assert len(pregnancy_flags) == 0
+
+
+def test_llm_judge_skipped_for_pregnancy():
+    """LLM judge must never be called for pregnancy=True profiles."""
+    call_count = [0]
+
+    guard = SafetyGuard(use_llm_judge=True, anthropic_api_key="mock")
+
+    class TrackingJudge(LLMSafetyJudge):
+        def __init__(self):
+            super().__init__(api_key="mock-key")
+
+        def judge(self, ingredients, profile):
+            call_count[0] += 1
+            return {"additional_flags": [], "overall_assessment": "safe"}
+
+    guard._llm_judge = TrackingJudge()
+
+    regimen = MockRegimen(pm=[MockStep(["niacinamide 5%"])])
+    profile = {"pregnancy": True, "medications": [], "concerns": []}
+    guard.check(regimen, profile)
+
+    assert call_count[0] == 0, "LLM judge must not be called for pregnancy=True"
+
+
+def test_llm_judge_confidence_threshold():
+    """Flags with confidence <= 0.7 must be filtered out."""
+    guard = SafetyGuard(use_llm_judge=True, anthropic_api_key="mock")
+    guard._llm_judge = _make_mock_judge({
+        "additional_flags": [
+            {
+                "severity": "warning",
+                "message": "Low confidence flag — should be filtered",
+                "affected_ingredients": ["niacinamide"],
+                "confidence": 0.5,  # below threshold
+            },
+            {
+                "severity": "caution",
+                "message": "High confidence flag — should appear",
+                "affected_ingredients": ["retinol"],
+                "confidence": 0.85,  # above threshold
+            },
+        ],
+        "overall_assessment": "caution",
+    })
+
+    regimen = MockRegimen(pm=[MockStep(["niacinamide 5%", "retinol 0.5%"])])
+    profile = {"pregnancy": False, "medications": [], "concerns": []}
+    report = guard.check(regimen, profile)
+
+    llm_flags = [f for f in report.flags if getattr(f, "source", "") == "llm_judge"]
+    assert len(llm_flags) == 1
+    assert "high confidence" in llm_flags[0].message.lower()
+
+
 # ── Run all tests ─────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -270,6 +436,12 @@ if __name__ == "__main__":
         test_allergen_inci_synonym_match,
         test_allergen_no_flag_when_no_allergy,
         test_allergen_no_false_positive,
+        # Prompt #05 — LLM judge
+        test_llm_judge_high_concentration_vitamin_c_retinol,
+        test_llm_judge_multiple_ahas,
+        test_llm_judge_standard_safe_routine,
+        test_llm_judge_skipped_for_pregnancy,
+        test_llm_judge_confidence_threshold,
     ]
 
     passed = 0

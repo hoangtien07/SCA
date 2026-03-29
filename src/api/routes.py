@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import base64
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 from loguru import logger
 
 from src.api.schemas import (
@@ -26,12 +26,14 @@ from src.api.schemas import (
     FullPipelineRequest, FullPipelineResponse,
     HealthResponse, EvidenceChunk,
     RoutineStepResponse,
+    AsyncTaskResponse, TaskStatusResponse,
+    ExplanationResultSchema,
 )
 from src.api.deps import (
     get_retriever, get_generator, get_vision_analyzer,
     get_safety_guard, get_indexer,
 )
-from src.api.tracing import PipelineTracer, new_trace_id
+from src.api.tracing import PipelineTracer, new_trace_id, LangSmithRun
 from src.agents.citation_checker import CitationChecker
 
 router = APIRouter()
@@ -50,6 +52,31 @@ def analyze_image(req: AnalyzeRequest):
     analyzer = get_vision_analyzer()
     analysis = analyzer.analyze_bytes(image_bytes, media_type=req.media_type)
 
+    # XAI explanation (Prompt #12) — opt-in via include_explanation=True
+    explanation_result = None
+    if req.include_explanation:
+        from config.settings import settings
+        if settings.xai_enabled:
+            try:
+                from src.agents.xai_explainer import VisionExplainer
+                explainer = VisionExplainer(
+                    num_samples=settings.xai_num_samples,
+                    surrogate_model=settings.xai_surrogate_model,
+                )
+                primary_condition = analysis.detected_conditions[0] if analysis.detected_conditions else ""
+                xai_result = explainer.explain_analysis(image_bytes, condition=primary_condition)
+                explanation_result = ExplanationResultSchema(
+                    condition=xai_result.condition,
+                    heatmap_base64=xai_result.heatmap_base64,
+                    top_regions=xai_result.top_regions,
+                    confidence=xai_result.confidence,
+                    explanation_text=xai_result.explanation_text,
+                )
+            except Exception as e:
+                logger.warning(f"[analyze] XAI explanation failed: {e}")
+        else:
+            logger.info("[analyze] include_explanation=True but xai_enabled=False in settings")
+
     return AnalyzeResponse(
         overall_skin_type=analysis.overall_skin_type,
         fitzpatrick_estimate=analysis.fitzpatrick_estimate,
@@ -59,6 +86,7 @@ def analyze_image(req: AnalyzeRequest):
         redness_level=analysis.redness_level,
         texture_notes=analysis.texture_notes,
         confidence_note=analysis.confidence_note,
+        explanation=explanation_result,
     )
 
 
@@ -137,93 +165,173 @@ def full_pipeline(req: FullPipelineRequest):
     profile_dict = req.profile.model_dump()
     vision_response = None
 
-    # ── Step 1: Vision analysis (optional) ────────────────────────────────
-    if req.image_base64:
-        try:
-            image_bytes = base64.b64decode(req.image_base64)
-            analyzer = get_vision_analyzer()
-            analysis = analyzer.analyze_bytes(image_bytes, media_type=req.media_type)
-            vision_response = AnalyzeResponse(
-                overall_skin_type=analysis.overall_skin_type,
-                fitzpatrick_estimate=analysis.fitzpatrick_estimate,
-                detected_conditions=analysis.detected_conditions,
-                acne_severity=analysis.acne_severity,
-                hyperpigmentation=analysis.hyperpigmentation,
-                redness_level=analysis.redness_level,
-                texture_notes=analysis.texture_notes,
-                confidence_note=analysis.confidence_note,
+    with LangSmithRun(
+        "full_pipeline",
+        inputs={"profile": profile_dict, "has_image": bool(req.image_base64)},
+    ):
+        # ── Step 1: Vision analysis (optional) ───────────────────────────
+        if req.image_base64:
+            try:
+                image_bytes = base64.b64decode(req.image_base64)
+                analyzer = get_vision_analyzer()
+                analysis = analyzer.analyze_bytes(image_bytes, media_type=req.media_type)
+                vision_response = AnalyzeResponse(
+                    overall_skin_type=analysis.overall_skin_type,
+                    fitzpatrick_estimate=analysis.fitzpatrick_estimate,
+                    detected_conditions=analysis.detected_conditions,
+                    acne_severity=analysis.acne_severity,
+                    hyperpigmentation=analysis.hyperpigmentation,
+                    redness_level=analysis.redness_level,
+                    texture_notes=analysis.texture_notes,
+                    confidence_note=analysis.confidence_note,
+                )
+                # Merge vision results into profile
+                profile_dict["detected_conditions"] = analysis.detected_conditions
+                profile_dict["acne_severity"] = analysis.acne_severity
+                profile_dict["hyperpigmentation"] = analysis.hyperpigmentation
+                profile_dict["redness_level"] = analysis.redness_level
+                if not profile_dict.get("skin_type"):
+                    profile_dict["skin_type"] = analysis.overall_skin_type
+            except Exception as e:
+                logger.warning(f"[full-pipeline] Vision analysis failed: {e}")
+
+        # ── Step 2: Retrieve evidence ─────────────────────────────────────
+        retriever = get_retriever()
+        query = retriever.build_query_from_profile(profile_dict)
+        results = retriever.retrieve(
+            query=query,
+            skin_conditions=profile_dict.get("concerns") or None,
+            top_k=8,
+        )
+        tracer.log_retrieval(
+            query=query,
+            n_results=len(results),
+            top_score=results[0].score if results else 0.0,
+            bm25_used=retriever.bm25 is not None,
+        )
+
+        # ── Step 3: Generate regimen ──────────────────────────────────────
+        import time as _time
+        _gen_start = _time.monotonic()
+        generator = get_generator()
+        regimen = generator.generate(profile=profile_dict, evidence_chunks=results)
+        _gen_ms = (_time.monotonic() - _gen_start) * 1000
+        tracer.log_generation(model=generator.model, latency_ms=_gen_ms)
+
+        # ── Step 4: Safety check ──────────────────────────────────────────
+        guard = get_safety_guard()
+        safety_report = guard.check(regimen=regimen, profile=profile_dict)
+        tracer.log_safety(
+            flags=[f.message for f in safety_report.flags],
+            severity_counts=_count_severities(safety_report),
+        )
+
+        # ── Step 5: Citation grounding ────────────────────────────────────
+        checker = CitationChecker()
+        citation_report = checker.check(regimen, results)
+        tracer.log_citation(
+            grounding_rate=citation_report.grounding_rate,
+            ungrounded=citation_report.ungrounded_citations,
+        )
+
+        # Append safety contraindications to regimen
+        if safety_report.modified_contraindications:
+            existing = list(regimen.contraindications)
+            existing.extend(safety_report.modified_contraindications)
+            regimen.contraindications = existing
+
+        tracer.finish()
+
+        return FullPipelineResponse(
+            regimen=_regimen_to_response(regimen),
+            safety_report=_safety_report_to_response(safety_report),
+            vision_analysis=vision_response,
+            evidence_count=len(results),
+            query_used=query,
+        )
+
+
+# ── POST /generate-async (Prompt #06) ────────────────────────────────────────
+
+@router.post("/generate-async", response_model=AsyncTaskResponse)
+def generate_async(req: FullPipelineRequest):
+    """
+    Submit a regimen generation job to the async queue.
+    Returns immediately with a task_id and poll_url.
+    Requires Redis to be running.
+    """
+    try:
+        from src.workers.tasks import generate_regimen_task
+        profile_dict = req.profile.model_dump()
+        task = generate_regimen_task.delay(
+            profile_dict=profile_dict,
+            image_base64=req.image_base64,
+            media_type=req.media_type,
+        )
+        return AsyncTaskResponse(
+            task_id=task.id,
+            status="queued",
+            poll_url=f"/task/{task.id}",
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=f"Async queue unavailable: {e}")
+    except Exception as e:
+        logger.error(f"[generate-async] Failed to queue task: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── GET /task/{task_id} (Prompt #06) ─────────────────────────────────────────
+
+@router.get("/task/{task_id}", response_model=TaskStatusResponse)
+def get_task_status(task_id: str):
+    """
+    Poll the status of an async generation task.
+    Returns: {status, progress 0-100, result|null, error|null, latency_ms}
+    """
+    try:
+        from celery.result import AsyncResult
+        from src.workers.celery_app import celery_app
+
+        if celery_app is None:
+            raise HTTPException(status_code=503, detail="Celery not available")
+
+        result = AsyncResult(task_id, app=celery_app)
+        meta = result.info or {}
+
+        if isinstance(meta, Exception):
+            return TaskStatusResponse(
+                task_id=task_id,
+                status="FAILURE",
+                progress=0,
+                error=str(meta),
             )
-            # Merge vision results into profile
-            profile_dict["detected_conditions"] = analysis.detected_conditions
-            profile_dict["acne_severity"] = analysis.acne_severity
-            profile_dict["hyperpigmentation"] = analysis.hyperpigmentation
-            profile_dict["redness_level"] = analysis.redness_level
-            if not profile_dict.get("skin_type"):
-                profile_dict["skin_type"] = analysis.overall_skin_type
-        except Exception as e:
-            logger.warning(f"[full-pipeline] Vision analysis failed: {e}")
 
-    # ── Step 2: Retrieve evidence ─────────────────────────────────────────
-    retriever = get_retriever()
-    query = retriever.build_query_from_profile(profile_dict)
-    results = retriever.retrieve(
-        query=query,
-        skin_conditions=profile_dict.get("concerns") or None,
-        top_k=8,
-    )
-    tracer.log_retrieval(
-        query=query,
-        n_results=len(results),
-        top_score=results[0].score if results else 0.0,
-        bm25_used=retriever.bm25 is not None,
-    )
+        status = meta.get("status", result.state)
+        progress = meta.get("progress", 0)
+        task_result = meta.get("result") if result.state == "SUCCESS" else None
+        error = meta.get("error") if result.state == "FAILURE" else None
+        latency_ms = meta.get("latency_ms")
 
-    # ── Step 3: Generate regimen ──────────────────────────────────────────
-    import time as _time
-    _gen_start = _time.monotonic()
-    generator = get_generator()
-    regimen = generator.generate(profile=profile_dict, evidence_chunks=results)
-    _gen_ms = (_time.monotonic() - _gen_start) * 1000
-    tracer.log_generation(model=generator.model, latency_ms=_gen_ms)
-
-    # ── Step 4: Safety check ──────────────────────────────────────────────
-    guard = get_safety_guard()
-    safety_report = guard.check(regimen=regimen, profile=profile_dict)
-    tracer.log_safety(
-        flags=[f.message for f in safety_report.flags],
-        severity_counts=_count_severities(safety_report),
-    )
-
-    # ── Step 5: Citation grounding ────────────────────────────────────────
-    checker = CitationChecker()
-    citation_report = checker.check(regimen, results)
-    tracer.log_citation(
-        grounding_rate=citation_report.grounding_rate,
-        ungrounded=citation_report.ungrounded_citations,
-    )
-
-    # Append safety contraindications to regimen
-    if safety_report.modified_contraindications:
-        existing = list(regimen.contraindications)
-        existing.extend(safety_report.modified_contraindications)
-        regimen.contraindications = existing
-
-    tracer.finish()
-
-    return FullPipelineResponse(
-        regimen=_regimen_to_response(regimen),
-        safety_report=_safety_report_to_response(safety_report),
-        vision_analysis=vision_response,
-        evidence_count=len(results),
-        query_used=query,
-    )
+        return TaskStatusResponse(
+            task_id=task_id,
+            status=status,
+            progress=progress,
+            result=task_result,
+            error=error,
+            latency_ms=latency_ms,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[task/{task_id}] Status check failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ── GET /health ───────────────────────────────────────────────────────────────
 
 @router.get("/health", response_model=HealthResponse)
 def health():
-    """Health check with KB statistics."""
+    """Health check with KB statistics and optional cache stats."""
     from config.settings import settings
 
     try:
@@ -233,11 +341,64 @@ def health():
     except Exception:
         chunk_count = -1
 
+    # Semantic cache stats (Prompt #07)
+    cache_stats = None
+    if settings.cache_enabled:
+        try:
+            from src.cache.semantic_cache import SemanticCache
+            from src.pipeline.embedder import get_embedder
+            embedder = get_embedder(settings)
+            cache = SemanticCache(
+                redis_url=settings.redis_url,
+                embedder=embedder,
+                threshold=settings.cache_similarity_threshold,
+            )
+            cache_stats = cache.cache_stats()
+        except Exception:
+            pass
+
     return HealthResponse(
         status="ok",
         environment=settings.environment,
         knowledge_base_chunks=chunk_count,
+        cache_stats=cache_stats,
     )
+
+
+# ── DELETE /admin/cache (Prompt #07) ─────────────────────────────────────────
+
+@router.delete("/admin/cache")
+def clear_cache(x_admin_token: str | None = Header(default=None)):
+    """
+    Clear the semantic cache. Requires X-Admin-Token header.
+    """
+    from config.settings import settings
+    import os
+
+    expected_token = os.environ.get("ADMIN_TOKEN", "")
+    if not expected_token or x_admin_token != expected_token:
+        raise HTTPException(status_code=403, detail="Invalid or missing X-Admin-Token header")
+
+    if not settings.cache_enabled:
+        return {"status": "cache not enabled"}
+
+    try:
+        from src.cache.semantic_cache import SemanticCache
+        from src.pipeline.embedder import get_embedder
+        embedder = get_embedder(settings)
+        cache = SemanticCache(
+            redis_url=settings.redis_url,
+            embedder=embedder,
+            threshold=settings.cache_similarity_threshold,
+        )
+        import redis as redis_lib
+        r = redis_lib.from_url(settings.redis_url)
+        keys = r.keys("sca:cache:*")
+        if keys:
+            r.delete(*keys)
+        return {"status": "ok", "keys_deleted": len(keys)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cache clear failed: {e}")
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────

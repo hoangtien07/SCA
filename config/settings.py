@@ -39,6 +39,34 @@ class Settings(BaseSettings):
     chunk_overlap: int = 64
     retrieval_top_k: int = 8
 
+    # ── LangSmith Tracing ─────────────────────────────────────────────────────
+    langsmith_api_key: str = ""
+    langsmith_project: str = "skincare-ai"
+    langsmith_tracing: bool = False
+
+    # ── Embeddings ───────────────────────────────────────────────────────────
+    embedding_provider: str = "local"          # "local" | "openai"
+    embedding_device: str = "cpu"
+    embedding_batch_size: int = 32
+
+    # ── Redis / Celery ────────────────────────────────────────────────────────
+    redis_url: str = "redis://localhost:6379/0"
+
+    # ── Semantic Cache ────────────────────────────────────────────────────────
+    cache_enabled: bool = False
+    cache_retrieval_ttl: int = 86400
+    cache_regimen_ttl: int = 43200
+    cache_similarity_threshold: float = 0.92
+
+    # ── CV Datasets ───────────────────────────────────────────────────────────
+    cv_datasets_dir: str = "./data/cv_datasets"
+    vision_eval_sample_size: int = 100
+
+    # ── XAI ──────────────────────────────────────────────────────────────────
+    xai_enabled: bool = False
+    xai_num_samples: int = 500
+    xai_surrogate_model: str = "mobilenet_v2"
+
     # ── App ──────────────────────────────────────────────────────────────────
     environment: str = "development"
     log_level: str = "INFO"

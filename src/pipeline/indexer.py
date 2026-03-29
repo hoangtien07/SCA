@@ -10,14 +10,24 @@ Two backends:
 Both expose the same interface:
     indexer.add(chunks)
     indexer.query(text, filters, top_k) -> list[Chunk]
+
+Prompt #04 upgrade:
+    - Both indexers now accept an optional `embedder` (BaseEmbedder) in __init__
+    - When embedder is provided, it is used instead of the built-in embedding function
+    - model_name is stored in collection metadata
+    - ValueError raised if existing collection used a different model
 """
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
 from src.pipeline.chunker import Chunk
+
+if TYPE_CHECKING:
+    from src.pipeline.embedder import BaseEmbedder
 
 
 # ── ChromaDB Indexer (local dev) ──────────────────────────────────────────────
@@ -31,6 +41,11 @@ class ChromaIndexer:
         indexer = ChromaIndexer()
         indexer.add(chunks)
         results = indexer.query("retinol for acne", top_k=5)
+
+    With custom embedder (Prompt #04):
+        from src.pipeline.embedder import get_embedder
+        embedder = get_embedder(settings)
+        indexer = ChromaIndexer(embedder=embedder)
     """
 
     COLLECTION_NAME = "skincare_papers"
@@ -40,26 +55,55 @@ class ChromaIndexer:
         persist_dir: str = "./data/knowledge_base",
         embedding_model: str = "text-embedding-3-small",
         openai_api_key: str = "",
+        embedder: "BaseEmbedder | None" = None,
     ):
         import chromadb
         from chromadb.utils import embedding_functions
 
         self.client = chromadb.PersistentClient(path=persist_dir)
+        self._custom_embedder = embedder
 
-        # Use OpenAI embeddings
-        self.embed_fn = embedding_functions.OpenAIEmbeddingFunction(
-            api_key=openai_api_key,
-            model_name=embedding_model,
-        )
+        if embedder is not None:
+            # Use custom embedder — wrap it as a ChromaDB-compatible function
+            _emb = embedder
+            class _CustomEmbedFn:
+                def __call__(self, input: list[str]) -> list[list[float]]:
+                    return _emb.embed(input)
+
+            self.embed_fn = _CustomEmbedFn()
+            resolved_model_name = embedder.model_name
+        else:
+            # Default: OpenAI embeddings
+            self.embed_fn = embedding_functions.OpenAIEmbeddingFunction(
+                api_key=openai_api_key,
+                model_name=embedding_model,
+            )
+            resolved_model_name = embedding_model
+
+        # Check for model mismatch in existing collection
+        existing_collections = [c.name for c in self.client.list_collections()]
+        if self.COLLECTION_NAME in existing_collections:
+            existing_coll = self.client.get_collection(name=self.COLLECTION_NAME)
+            stored_model = (existing_coll.metadata or {}).get("embedding_model", "")
+            if stored_model and stored_model != resolved_model_name:
+                raise ValueError(
+                    f"[ChromaIndexer] Embedding model mismatch! "
+                    f"Collection was built with '{stored_model}' but "
+                    f"you are using '{resolved_model_name}'. "
+                    "Use --reindex to rebuild the collection from scratch."
+                )
 
         self.collection = self.client.get_or_create_collection(
             name=self.COLLECTION_NAME,
             embedding_function=self.embed_fn,
-            metadata={"hnsw:space": "cosine"},
+            metadata={
+                "hnsw:space": "cosine",
+                "embedding_model": resolved_model_name,
+            },
         )
         logger.info(
             f"[ChromaIndexer] Collection '{self.COLLECTION_NAME}' "
-            f"has {self.collection.count()} chunks"
+            f"has {self.collection.count()} chunks (model: {resolved_model_name})"
         )
 
     def add(self, chunks: list[Chunk], batch_size: int = 50) -> None:

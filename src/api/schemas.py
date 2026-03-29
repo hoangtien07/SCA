@@ -33,6 +33,7 @@ class AnalyzeRequest(BaseModel):
     """Request body for /analyze — image as base64."""
     image_base64: str
     media_type: str = "image/jpeg"
+    include_explanation: bool = False    # Prompt #12: XAI heatmap (requires xai_enabled=True)
 
 
 class RetrieveRequest(BaseModel):
@@ -124,17 +125,6 @@ class RetrieveResponse(BaseModel):
     query_used: str
 
 
-class AnalyzeResponse(BaseModel):
-    overall_skin_type: str
-    fitzpatrick_estimate: str
-    detected_conditions: list[str]
-    acne_severity: str
-    hyperpigmentation: str
-    redness_level: str
-    texture_notes: str
-    confidence_note: str
-
-
 class FullPipelineResponse(BaseModel):
     """Full pipeline output — regimen + safety report + evidence metadata."""
     regimen: RegimenResponse
@@ -148,3 +138,51 @@ class HealthResponse(BaseModel):
     status: str = "ok"
     environment: str = ""
     knowledge_base_chunks: int = 0
+    cache_stats: dict | None = None
+
+
+# ── Async task schemas (Prompt #06) ──────────────────────────────────────────
+
+class AsyncTaskResponse(BaseModel):
+    """Response for POST /generate-async — returns immediately."""
+    task_id: str
+    status: str = "queued"
+    poll_url: str
+
+
+class TaskStatusResponse(BaseModel):
+    """Response for GET /task/{task_id}."""
+    task_id: str
+    status: str
+    progress: int = 0
+    result: dict | None = None
+    error: str | None = None
+    latency_ms: float | None = None
+
+
+# ── XAI schemas (Prompt #12) ─────────────────────────────────────────────────
+
+class ExplanationResultSchema(BaseModel):
+    """XAI explanation result from LIME heatmap analysis."""
+    condition: str = ""
+    heatmap_base64: str = ""          # base64-encoded PNG overlay
+    top_regions: list[str] = Field(default_factory=list)
+    confidence: float = 0.0
+    explanation_text: str = ""
+    surrogate_caveat: str = (
+        "This explanation uses a MobileNetV2 surrogate model trained on ImageNet "
+        "as a proxy for the GPT-4o Vision analysis. It is an approximation only "
+        "and may not perfectly reflect the AI's actual reasoning."
+    )
+
+
+class AnalyzeResponse(BaseModel):
+    overall_skin_type: str
+    fitzpatrick_estimate: str
+    detected_conditions: list[str]
+    acne_severity: str
+    hyperpigmentation: str
+    redness_level: str
+    texture_notes: str
+    confidence_note: str
+    explanation: ExplanationResultSchema | None = None

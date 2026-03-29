@@ -107,6 +107,22 @@ class RegimenGenerator:
         profile_json = json.dumps(profile, indent=2)
         evidence_context = self._format_evidence(evidence_chunks)
 
+        # Build cache key from profile + evidence summaries
+        pregnancy = profile.get("pregnancy", False)
+        cache_key = self._make_cache_key(profile, evidence_context)
+
+        # ── Semantic cache check (Layer 2, TTL 12h) ───────────────────────
+        _cache = self._get_cache()
+        if _cache is not None and not pregnancy:
+            cached = _cache.get(cache_key, "regimen")
+            if cached is not None:
+                try:
+                    regimen = Regimen(**cached)
+                    logger.info("[RegimenGenerator] Cache HIT — returning cached regimen")
+                    return regimen
+                except Exception:
+                    pass  # Corrupted cache — continue to fresh generation
+
         user_message = USER_PROMPT_TEMPLATE.format(
             profile_json=profile_json,
             evidence_context=evidence_context,
@@ -133,12 +149,53 @@ class RegimenGenerator:
             data = json.loads(raw_json)
             regimen = Regimen(**data)
             logger.info("[RegimenGenerator] Regimen generated successfully.")
+
+            # ── Store in cache ────────────────────────────────────────────
+            if _cache is not None and not pregnancy:
+                try:
+                    from config.settings import settings
+                    _cache.set(cache_key, data, "regimen", ttl=settings.cache_regimen_ttl)
+                except Exception:
+                    pass
+
             return regimen
         except Exception as e:
             logger.error(f"[RegimenGenerator] Parse error: {e}\nRaw: {raw_json[:500]}")
             raise ValueError(f"Failed to parse regimen JSON: {e}") from e
 
     # ── Internal ──────────────────────────────────────────────────────────────
+
+    def _get_cache(self):
+        """Return SemanticCache if enabled, else None."""
+        try:
+            from config.settings import settings
+            if not settings.cache_enabled:
+                return None
+            from src.cache.semantic_cache import SemanticCache
+            from src.pipeline.embedder import get_embedder
+            if not hasattr(self, "_cache"):
+                self._cache = SemanticCache(
+                    redis_url=settings.redis_url,
+                    embedder=get_embedder(settings),
+                    threshold=settings.cache_similarity_threshold,
+                )
+            return self._cache
+        except Exception:
+            return None
+
+    def _make_cache_key(self, profile: dict, evidence_context: str) -> str:
+        """Build a stable cache key from profile + evidence summary."""
+        import json
+        # Use key profile fields + first 200 chars of evidence context
+        key_parts = {
+            "skin_type": profile.get("skin_type", ""),
+            "concerns": sorted(profile.get("concerns", [])),
+            "fitzpatrick": profile.get("fitzpatrick", ""),
+            "age_range": profile.get("age_range", ""),
+            "primary_goal": profile.get("primary_goal", "")[:100],
+            "evidence_head": evidence_context[:200],
+        }
+        return json.dumps(key_parts, sort_keys=True)
 
     def _format_evidence(self, chunks: list) -> str:
         """Format retrieved chunks into a readable context block for the LLM."""
